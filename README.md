@@ -2,7 +2,7 @@
 
 > **Comprehensive Brand Monitoring & Review Aggregation System**
 
-![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial-blue.svg)
 ![Node: 20+](https://img.shields.io/badge/Node-20%2B-green.svg)
 ![TypeScript](https://img.shields.io/badge/Language-TypeScript-blue.svg)
 
@@ -207,4 +207,4 @@ npm run scrape:appstore
 ---
 
 ## 📄 License
-This MVP is open-source software licensed under the **MIT license**.
+This MVP is software licensed under the **PolyForm Noncommercial License 1.0.0**.

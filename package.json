@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Social Media Monitoring & Review Aggregation Tool for Matiks",
   "type": "module",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
