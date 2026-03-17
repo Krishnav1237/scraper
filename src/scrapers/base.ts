@@ -1,6 +1,7 @@
 import { BrowserContext, Page } from 'playwright';
 import { createStealthContext, saveCookies, closeBrowser } from '../core/browser.js';
 import { rateLimit, reportSuccess, reportFailure, withRetry } from '../core/rateLimit.js';
+import { getCircuitBreaker } from '../core/circuitBreaker.js';
 import { logger } from '../core/logger.js';
 import { logScrapeStart, logScrapeEnd, PlatformName } from '../db/queries.js';
 import { analyzeSentiment } from '../pipeline/sentiment.js';
@@ -59,10 +60,17 @@ export abstract class BaseScraper<T> {
       // Lifecycle hooks
       await this.beforeScrape();
       
-      // Run scraping with retry
-      items = await withRetry(
-        () => this.scrapeData(),
-        { maxRetries: 2, platform: this.platform }
+      // Run scraping through circuit breaker → retry
+      const breaker = getCircuitBreaker(this.platform, {
+        failureThreshold: 3,
+        successThreshold: 1,
+        timeout: 120_000,  // 2 min cool-down
+      });
+      items = await breaker.execute(() =>
+        withRetry(
+          () => this.scrapeData(),
+          { maxRetries: 2, platform: this.platform },
+        ),
       );
       
       // Analyze sentiment

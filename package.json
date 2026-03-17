@@ -1,9 +1,9 @@
 {
-  "name": "matiks-monitor",
-  "version": "1.0.0",
-  "description": "Social Media Monitoring & Review Aggregation Tool for Matiks",
+  "name": "social-media-monitor",
+  "version": "2.0.0",
+  "description": "Reusable Social Media Monitoring & Review Aggregation Platform",
   "type": "module",
-  "license": "PolyForm-Noncommercial-1.0.0",
+  "license": "MIT",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",

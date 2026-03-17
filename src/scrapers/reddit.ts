@@ -1,7 +1,7 @@
 /**
  * PRODUCTION-GRADE REDDIT SCRAPER
  * ================================
- * Exhaustive, bulletproof scraper for capturing ALL Matiks mentions on Reddit.
+ * Exhaustive, bulletproof scraper for capturing configured keyword mentions on Reddit.
  * 
  * Features:
  * - Token bucket rate limiter with exponential backoff
@@ -21,7 +21,7 @@ import { config } from '../config.js';
 import { Mention, insertMentions, PLATFORMS, logScrapeStart, logScrapeEnd, getScrapeCursor, updateScrapeCursor } from '../db/queries.js';
 import { analyzeSentiment } from '../pipeline/sentiment.js';
 import { getBrowser, closeBrowser } from '../core/browser.js';
-import { matchesBrand, matchesBrandBalanced, getBrandAnchors } from '../core/brandFilter.js';
+import { matchesTarget as matchesBrand, matchesTargetBalanced as matchesBrandBalanced, getRequiredAnchors as getBrandAnchors } from '../core/brandFilter.js';
 import type { Page } from 'playwright';
 
 // ============================================================================
@@ -160,7 +160,7 @@ export class RedditScraper {
   ]);
   
   private readonly brandSubreddits = new Set(
-    (config.brandSubreddits || []).map(sub => sub.toLowerCase()).filter(Boolean)
+    (config.monitorSubreddits || []).map(sub => sub.toLowerCase()).filter(Boolean)
   );
 
   private readonly excludePatterns = [
@@ -808,11 +808,11 @@ export class RedditScraper {
 
     const combined = `${text1} ${text2} ${url || ''}`.toLowerCase();
 
-    if (config.brandStrict) {
+    if (config.filterStrict) {
       return matchesBrand(combined);
     }
 
-    if (config.brandBalanced) {
+    if (config.filterBalanced) {
       if (!matchesBrandBalanced(combined, this.contextKeywords)) return false;
     } else {
       if (!matchesBrand(combined)) return false;

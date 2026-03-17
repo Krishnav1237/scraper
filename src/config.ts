@@ -22,16 +22,26 @@ const bool = (defaultValue: string) =>
 
 // Configuration Schema
 const configSchema = z.object({
+  // App identity
+  appName: z.string().default('Social Monitor'),
+  dbName: z.string().default('monitor.db'),
+
   // Search Settings
-  searchTerms: csv('matiks'),
-  brandRequiredTerms: csv('matiks.in'),
+  searchTerms: csv(''),
+  requiredTerms: csv(''),
+  filterStrict: bool('false'),
+  filterBalanced: bool('true'),
+  monitorSubreddits: csv(''),
+
+  // Backwards-compat aliases (mapped from env below)
+  brandRequiredTerms: csv(''),
   brandStrict: bool('false'),
   brandBalanced: bool('true'),
-  brandSubreddits: csv('matiks'),
+  brandSubreddits: csv(''),
   
   // App Identifiers
-  playstoreAppId: z.string().default('com.matiks.app'),
-  appstoreAppId: z.string().default('123456789'),
+  playstoreAppId: z.string().default(''),
+  appstoreAppId: z.string().default(''),
   
   // Single Proxy (Legacy)
   proxy: z.object({
@@ -82,11 +92,28 @@ const configSchema = z.object({
     headless: bool('true'),
     slowMo: z.string().default('0').transform(Number),
   }),
+
+  // Reddit OAuth (for Outreach module)
+  reddit: z.object({
+    clientId: z.string().default(''),
+    clientSecret: z.string().default(''),
+    redirectUri: z.string().default('http://localhost:3000/outreach/auth/callback'),
+    userAgent: z.string().default('SocialMonitor/2.0'),
+  }),
 });
 
 // Validate Environment
 const rawConfig = {
+  appName: process.env.APP_NAME,
+  dbName: process.env.DB_NAME,
+
   searchTerms: process.env.SEARCH_TERMS,
+  // Support both new and legacy env var names
+  requiredTerms: process.env.REQUIRED_TERMS ?? process.env.BRAND_REQUIRED_TERMS,
+  filterStrict: process.env.FILTER_STRICT ?? process.env.BRAND_STRICT,
+  filterBalanced: process.env.FILTER_BALANCED ?? process.env.BRAND_BALANCED,
+  monitorSubreddits: process.env.MONITOR_SUBREDDITS ?? process.env.BRAND_SUBREDDITS,
+
   brandRequiredTerms: process.env.BRAND_REQUIRED_TERMS,
   brandStrict: process.env.BRAND_STRICT,
   brandBalanced: process.env.BRAND_BALANCED,
@@ -125,6 +152,13 @@ const rawConfig = {
     headless: process.env.HEADLESS,
     slowMo: process.env.SLOWMO,
   },
+
+  reddit: {
+    clientId: process.env.REDDIT_CLIENT_ID,
+    clientSecret: process.env.REDDIT_CLIENT_SECRET,
+    redirectUri: process.env.REDDIT_REDIRECT_URI,
+    userAgent: process.env.REDDIT_USER_AGENT,
+  },
 };
 
 // Transform Proxy Object for App Consumption
@@ -139,6 +173,11 @@ const validated = parsed.data;
 
 export const config = {
   ...validated,
+  // Resolve effective filter settings: new names take precedence over legacy
+  requiredTerms: validated.requiredTerms.length > 0 ? validated.requiredTerms : validated.brandRequiredTerms,
+  filterStrict: validated.filterStrict || validated.brandStrict,
+  filterBalanced: validated.filterBalanced || validated.brandBalanced,
+  monitorSubreddits: validated.monitorSubreddits.length > 0 ? validated.monitorSubreddits : validated.brandSubreddits,
   proxy: validated.proxy ? {
     server: `http://${validated.proxy.host}:${validated.proxy.port}`,
     username: validated.proxy.username,

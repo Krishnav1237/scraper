@@ -2,10 +2,11 @@ import { initializeDatabase } from './db/schema.js';
 import { startServer } from './web/server.js';
 import { startScheduler } from './scheduler/jobs.js';
 import { logger } from './core/logger.js';
+import { config } from './config.js';
 
 async function main() {
   logger.info('='.repeat(50));
-  logger.info('Matiks Social Media Monitor');
+  logger.info(`${config.appName}`);
   logger.info('='.repeat(50));
   
   // Initialize database
@@ -23,11 +24,10 @@ async function main() {
   logger.info('');
   logger.info('✅ System is running!');
   logger.info('');
-  logger.info('Dashboard: http://localhost:3000');
+  logger.info(`Dashboard: http://localhost:${config.port}`);
   logger.info('');
   logger.info('Manual scrape commands:');
   logger.info('  npm run scrape:reddit');
-
   logger.info('  npm run scrape:playstore');
   logger.info('  npm run scrape:appstore');
   logger.info('  npm run scrape:all');
