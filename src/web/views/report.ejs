@@ -58,6 +58,22 @@ const maxMentions = digest.daily_trend.length > 0
       <div style="font-size: 2rem; font-weight: 800; color: ${digest.alerts_fired > 0 ? '#C2410C' : '#111827'}; margin-bottom: 4px;">${digest.alerts_fired}</div>
       <a href="/projects" style="font-size: 0.8rem; color: #2563EB; text-decoration: none;">View rules &rarr;</a>
     </div>
+
+    <%
+    const bs = digest.brand_score;
+    const bsColor = bs.overallScore >= 65 ? '#059669' : bs.overallScore >= 35 ? '#D97706' : '#DC2626';
+    const bsBg    = bs.overallScore >= 65 ? '#F0FDF4' : bs.overallScore >= 35 ? '#FFFBEB' : '#FFF1F2';
+    const bsBorder= bs.overallScore >= 65 ? '#BBF7D0' : bs.overallScore >= 35 ? '#FDE68A' : '#FECDD3';
+    %>
+    <div style="background: <%- bsBg %>; border: 1px solid <%- bsBorder %>; border-radius: 12px; padding: 20px;">
+      <div style="font-size: 0.75rem; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Brand Health</div>
+      <div style="display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px;">
+        <div style="font-size: 2rem; font-weight: 800; color: <%- bsColor %>;"><%- bs.overallScore %></div>
+        <div style="font-size: 1rem; font-weight: 600; color: <%- bsColor %>;">/ 100</div>
+      </div>
+      <div style="font-size: 0.8rem; font-weight: 600; color: <%- bsColor %>; margin-bottom: 4px;"><%- bs.verdict %></div>
+      <div style="font-size: 0.75rem; color: #6B7280;">↑ <%- bs.positivePct %>% pos &nbsp;↓ <%- bs.negativePct %>% neg</div>
+    </div>
   </div>
 
   <!-- Two-column layout -->

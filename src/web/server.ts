@@ -23,10 +23,13 @@ import {
   getEntityComparison,
   getWeeklyDigest,
   getBrandScore,
+  getAudienceSegments,
 } from '../db/queries.js';
 import { GoogleSheetsService } from '../core/googleSheets.js';
 import { getScheduleInfo } from '../scheduler/jobs.js';
 import { getRateLimitState } from '../core/rateLimit.js';
+import { apiCache } from '../core/cache.js';
+import { getAllCircuitStatus } from '../core/circuitBreaker.js';
 
 const app = express();
 const appName = config.appName;
@@ -382,7 +385,13 @@ app.get('/api/reviews', (req, res) => {
 
 app.get('/api/trends', (req, res) => {
   const days = parseInt(req.query.days as string) || 30;
-  res.json(getTrends(Math.min(days, 365)));
+  const capped = Math.min(days, 365);
+  const cacheKey = `trends:${capped}`;
+  const cached = apiCache.get(cacheKey);
+  if (cached) return res.json(cached);
+  const result = getTrends(capped);
+  apiCache.set(cacheKey, result, 5 * 60 * 1000);
+  res.json(result);
 });
 
 app.get('/api/alerts', (req, res) => {
@@ -481,7 +490,42 @@ app.get('/api/sentiment/summary', (req, res) => {
 // Query param: ?days=30 (window, 1-365, default 30)
 app.get('/api/brand/score', (req, res) => {
   const days = Math.min(parseInt(req.query.days as string) || 30, 365);
-  res.json(getBrandScore(days));
+  const cacheKey = `brand:score:${days}`;
+  const cached = apiCache.get(cacheKey);
+  if (cached) return res.json({ ...cached as object, cached: true });
+  const result = getBrandScore(days);
+  apiCache.set(cacheKey, result, 5 * 60 * 1000); // 5 min
+  res.json({ ...result, cached: false });
+});
+
+// ── Audience segment / persona analysis ─────────────────────────────────────
+// Returns engagement tiers, platform breakdown, and time-of-day patterns so
+// brand managers can answer "who is talking about us?"
+// Query param: ?days=30 (window, 1-365, default 30)
+app.get('/api/audience/segments', (req, res) => {
+  const days = Math.min(parseInt(req.query.days as string) || 30, 365);
+  const cacheKey = `audience:segments:${days}`;
+  const cached = apiCache.get(cacheKey);
+  if (cached) return res.json({ ...cached as object, cached: true });
+  const result = getAudienceSegments(days);
+  apiCache.set(cacheKey, result, 10 * 60 * 1000); // 10 min
+  res.json({ ...result, cached: false });
+});
+
+// ── System status — circuit breakers + cache ─────────────────────────────────
+// Production health endpoint; shows scraper circuit state and response-cache
+// hit-rate so operators can spot degraded providers at a glance.
+app.get('/api/status', (req, res) => {
+  res.json({
+    uptime: process.uptime(),
+    circuitBreakers: getAllCircuitStatus(),
+    cache: apiCache.stats(),
+    scheduledJobs: getScheduleInfo(),
+    rateLimits: ['reddit', 'playstore', 'appstore'].reduce((acc, p) => {
+      acc[p] = getRateLimitState(p);
+      return acc;
+    }, {} as Record<string, unknown>),
+  });
 });
 
 // ============================================================================

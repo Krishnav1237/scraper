@@ -1162,6 +1162,7 @@ export interface WeeklyDigest {
   alerts_fired: number;
   daily_trend: TrendPoint[];
   top_platforms: { platform: string; mentions: number; sentiment: string }[];
+  brand_score: Pick<BrandScore, 'overallScore' | 'verdict' | 'verdictSummary' | 'positivePct' | 'negativePct'>;
 }
 
 export function getWeeklyDigest(weeksAgo = 0): WeeklyDigest {
@@ -1292,6 +1293,16 @@ export function getWeeklyDigest(weeksAgo = 0): WeeklyDigest {
       positive: r.positive, negative: r.negative, neutral: r.neutral,
     })),
     top_platforms: topPlatforms,
+    brand_score: (() => {
+      const bs = getBrandScore(7 + offset);
+      return {
+        overallScore: bs.overallScore,
+        verdict: bs.verdict,
+        verdictSummary: bs.verdictSummary,
+        positivePct: bs.positivePct,
+        negativePct: bs.negativePct,
+      };
+    })(),
   };
 }
 
@@ -1455,6 +1466,163 @@ export function getBrandScore(days = 30): BrandScore {
     totalDataPoints,
     windowDays,
     testimonials,
+    analyzedAt: new Date().toISOString(),
+  };
+}
+
+// ============================================================================
+// AUDIENCE SEGMENT / PERSONA ANALYSIS
+// Answers "which audience segment is talking about your brand?"
+// Derived entirely from existing mention + review data — no extra scraping.
+// ============================================================================
+
+export interface EngagementTierSegment {
+  tier: 'Power Users' | 'Active' | 'Casual';
+  authorCount: number;
+  mentionCount: number;
+  avgSentiment: number;
+  description: string;
+}
+
+export interface PlatformSegment {
+  platform: string;
+  mentionCount: number;
+  positivePct: number;
+  negativePct: number;
+  avgEngagement: number;
+}
+
+export interface TimeOfDaySegment {
+  period: 'Morning (6–12)' | 'Afternoon (12–18)' | 'Evening (18–24)' | 'Night (0–6)';
+  mentionCount: number;
+  positivePct: number;
+}
+
+export interface AudienceSegments {
+  windowDays: number;
+  totalMentions: number;
+  engagementTiers: EngagementTierSegment[];
+  platformBreakdown: PlatformSegment[];
+  timeOfDay: TimeOfDaySegment[];
+  analyzedAt: string;
+}
+
+export function getAudienceSegments(days = 30): AudienceSegments {
+  const windowDays = Math.max(1, Math.min(days, 365));
+
+  const totalRow = db.prepare(`
+    SELECT COUNT(*) as total FROM mentions
+    WHERE created_at >= datetime('now', '-' || ? || ' days')
+  `).get(windowDays) as { total: number };
+
+  // ── Engagement tiers ────────────────────────────────────────────────────
+  // Classify authors by total posts in the window:
+  //   Power Users ≥ 5 posts, Active 2-4, Casual 1
+  const authorRows = db.prepare(`
+    SELECT
+      author,
+      COUNT(*) as post_count,
+      AVG(sentiment_score) as avg_sent,
+      SUM(engagement_likes + engagement_comments) as total_eng
+    FROM mentions
+    WHERE created_at >= datetime('now', '-' || ? || ' days')
+      AND author IS NOT NULL
+    GROUP BY author
+  `).all(windowDays) as { author: string; post_count: number; avg_sent: number; total_eng: number }[];
+
+  function buildTier(
+    tier: EngagementTierSegment['tier'],
+    rows: typeof authorRows,
+    description: string,
+  ): EngagementTierSegment {
+    const mentionCount = rows.reduce((s, r) => s + r.post_count, 0);
+    const avgSentiment = rows.length > 0
+      ? rows.reduce((s, r) => s + (r.avg_sent ?? 0), 0) / rows.length
+      : 0;
+    return {
+      tier,
+      authorCount: rows.length,
+      mentionCount,
+      avgSentiment: parseFloat(avgSentiment.toFixed(3)),
+      description,
+    };
+  }
+
+  const powerRows  = authorRows.filter(r => r.post_count >= 5);
+  const activeRows = authorRows.filter(r => r.post_count >= 2 && r.post_count < 5);
+  const casualRows = authorRows.filter(r => r.post_count === 1);
+
+  const engagementTiers: EngagementTierSegment[] = [
+    buildTier('Power Users',  powerRows,  'Authors with ≥ 5 posts — your most vocal advocates or critics'),
+    buildTier('Active',       activeRows, 'Authors with 2–4 posts — regularly engaged audience'),
+    buildTier('Casual',       casualRows, 'Authors with a single post — broad reach, lighter engagement'),
+  ];
+
+  // ── Platform breakdown ──────────────────────────────────────────────────
+  const platformRows = db.prepare(`
+    SELECT
+      p.name as platform,
+      COUNT(*) as mention_count,
+      SUM(CASE WHEN m.sentiment_label = 'positive' THEN 1 ELSE 0 END) as positive,
+      SUM(CASE WHEN m.sentiment_label = 'negative' THEN 1 ELSE 0 END) as negative,
+      AVG(m.engagement_likes + m.engagement_comments) as avg_engagement
+    FROM mentions m
+    JOIN platforms p ON m.platform_id = p.id
+    WHERE m.created_at >= datetime('now', '-' || ? || ' days')
+    GROUP BY p.name
+    ORDER BY mention_count DESC
+  `).all(windowDays) as {
+    platform: string; mention_count: number;
+    positive: number; negative: number; avg_engagement: number;
+  }[];
+
+  const platformBreakdown: PlatformSegment[] = platformRows.map(r => ({
+    platform: r.platform,
+    mentionCount: r.mention_count,
+    positivePct: r.mention_count > 0 ? Math.round((r.positive / r.mention_count) * 100) : 0,
+    negativePct: r.mention_count > 0 ? Math.round((r.negative / r.mention_count) * 100) : 0,
+    avgEngagement: r.avg_engagement !== null ? Math.round(r.avg_engagement) : 0,
+  }));
+
+  // ── Time-of-day segments ────────────────────────────────────────────────
+  const timeRows = db.prepare(`
+    SELECT
+      CAST(strftime('%H', created_at) AS INTEGER) as hour,
+      COUNT(*) as total,
+      SUM(CASE WHEN sentiment_label = 'positive' THEN 1 ELSE 0 END) as positive
+    FROM mentions
+    WHERE created_at >= datetime('now', '-' || ? || ' days')
+    GROUP BY hour
+  `).all(windowDays) as { hour: number; total: number; positive: number }[];
+
+  function summarisePeriod(
+    period: TimeOfDaySegment['period'],
+    minHour: number,
+    maxHour: number,
+  ): TimeOfDaySegment {
+    const rows = timeRows.filter(r => r.hour >= minHour && r.hour < maxHour);
+    const mentionCount = rows.reduce((s, r) => s + r.total, 0);
+    const positive     = rows.reduce((s, r) => s + r.positive, 0);
+    return {
+      period,
+      mentionCount,
+      positivePct: mentionCount > 0 ? Math.round((positive / mentionCount) * 100) : 0,
+    };
+  }
+
+  const timeOfDay: TimeOfDaySegment[] = [
+    summarisePeriod('Morning (6–12)',   6,  12),
+    summarisePeriod('Afternoon (12–18)', 12, 18),
+    summarisePeriod('Evening (18–24)',  18, 24),
+    summarisePeriod('Night (0–6)',       0,  6),
+  ];
+
+  return {
+    windowDays,
+    totalMentions: totalRow.total || 0,
+    engagementTiers,
+    platformBreakdown,
+    timeOfDay,
     analyzedAt: new Date().toISOString(),
   };
 }

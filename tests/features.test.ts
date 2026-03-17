@@ -265,3 +265,296 @@ describe('Brand Health Score — combined score weighting', () => {
     expect(scoreToVerdict(overall)).toBe('Mixed');
   });
 });
+
+// ============================================================================
+// CIRCUIT BREAKER TESTS
+// Test the CLOSED → OPEN → HALF_OPEN state machine in isolation.
+// ============================================================================
+
+type CircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+
+interface CircuitConfig {
+  failureThreshold: number;
+  successThreshold: number;
+  timeout: number;
+}
+
+// Inline the circuit breaker logic so tests have no I/O dependency
+class TestCircuitBreaker {
+  private state: CircuitState = 'CLOSED';
+  private failures = 0;
+  private successes = 0;
+  private lastFailureAt: number | null = null;
+  constructor(private cfg: CircuitConfig) {}
+
+  async execute<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.state === 'OPEN') {
+      const elapsed = Date.now() - (this.lastFailureAt ?? 0);
+      if (elapsed >= this.cfg.timeout) {
+        this.state = 'HALF_OPEN';
+        this.successes = 0;
+      } else {
+        throw new Error('CIRCUIT_OPEN');
+      }
+    }
+    try {
+      const result = await fn();
+      this.onSuccess();
+      return result;
+    } catch (err) {
+      this.onFailure();
+      throw err;
+    }
+  }
+
+  private onSuccess() {
+    this.failures = 0;
+    if (this.state === 'HALF_OPEN') {
+      this.successes++;
+      if (this.successes >= this.cfg.successThreshold) this.state = 'CLOSED';
+    }
+  }
+
+  private onFailure() {
+    this.failures++;
+    this.lastFailureAt = Date.now();
+    if (this.state === 'HALF_OPEN' || this.failures >= this.cfg.failureThreshold) {
+      this.state = 'OPEN';
+    }
+  }
+
+  reset() { this.state = 'CLOSED'; this.failures = 0; this.successes = 0; }
+  getState() { return this.state; }
+  getFailures() { return this.failures; }
+}
+
+describe('Circuit Breaker — state transitions', () => {
+  it('starts CLOSED', () => {
+    const cb = new TestCircuitBreaker({ failureThreshold: 3, successThreshold: 1, timeout: 10_000 });
+    expect(cb.getState()).toBe('CLOSED');
+  });
+
+  it('opens after failureThreshold consecutive failures', async () => {
+    const cb = new TestCircuitBreaker({ failureThreshold: 3, successThreshold: 1, timeout: 60_000 });
+    const fail = () => Promise.reject(new Error('boom'));
+    for (let i = 0; i < 3; i++) {
+      await cb.execute(fail).catch(() => {});
+    }
+    expect(cb.getState()).toBe('OPEN');
+  });
+
+  it('rejects immediately when OPEN (before timeout)', async () => {
+    const cb = new TestCircuitBreaker({ failureThreshold: 1, successThreshold: 1, timeout: 60_000 });
+    await cb.execute(() => Promise.reject(new Error('x'))).catch(() => {});
+    expect(cb.getState()).toBe('OPEN');
+    await expect(cb.execute(() => Promise.resolve('ok'))).rejects.toThrow('CIRCUIT_OPEN');
+  });
+
+  it('transitions to HALF_OPEN after timeout', async () => {
+    const cb = new TestCircuitBreaker({ failureThreshold: 1, successThreshold: 1, timeout: 0 });
+    await cb.execute(() => Promise.reject(new Error('x'))).catch(() => {});
+    expect(cb.getState()).toBe('OPEN');
+    // timeout=0 means it should probe immediately
+    await cb.execute(() => Promise.resolve('probe')); // probe succeeds → CLOSED
+    expect(cb.getState()).toBe('CLOSED');
+  });
+
+  it('re-opens on failure in HALF_OPEN', async () => {
+    const cb = new TestCircuitBreaker({ failureThreshold: 1, successThreshold: 2, timeout: 0 });
+    await cb.execute(() => Promise.reject(new Error('x'))).catch(() => {});
+    // now OPEN → timeout=0 → HALF_OPEN on next call
+    await cb.execute(() => Promise.reject(new Error('again'))).catch(() => {});
+    expect(cb.getState()).toBe('OPEN');
+  });
+
+  it('closes after successThreshold successes in HALF_OPEN', async () => {
+    const cb = new TestCircuitBreaker({ failureThreshold: 1, successThreshold: 2, timeout: 0 });
+    await cb.execute(() => Promise.reject(new Error('x'))).catch(() => {});
+    await cb.execute(() => Promise.resolve('1')); // HALF_OPEN success 1
+    expect(cb.getState()).toBe('HALF_OPEN');
+    await cb.execute(() => Promise.resolve('2')); // success 2 → CLOSED
+    expect(cb.getState()).toBe('CLOSED');
+  });
+
+  it('reset() returns circuit to CLOSED', async () => {
+    const cb = new TestCircuitBreaker({ failureThreshold: 1, successThreshold: 1, timeout: 60_000 });
+    await cb.execute(() => Promise.reject(new Error('x'))).catch(() => {});
+    expect(cb.getState()).toBe('OPEN');
+    cb.reset();
+    expect(cb.getState()).toBe('CLOSED');
+  });
+});
+
+// ============================================================================
+// TTL CACHE TESTS
+// Test in-memory TTL cache without any I/O.
+// ============================================================================
+
+class TestTtlCache<T = unknown> {
+  private store = new Map<string, { value: T; expiresAt: number }>();
+  private hits = 0; private misses = 0;
+  constructor(private defaultTtlMs = 5000) {}
+  get(key: string): T | null {
+    const e = this.store.get(key);
+    if (!e) { this.misses++; return null; }
+    if (Date.now() > e.expiresAt) { this.store.delete(key); this.misses++; return null; }
+    this.hits++;
+    return e.value;
+  }
+  set(key: string, value: T, ttlMs = this.defaultTtlMs) {
+    this.store.set(key, { value, expiresAt: Date.now() + ttlMs });
+  }
+  delete(key: string) { this.store.delete(key); }
+  flush() { this.store.clear(); }
+  invalidatePattern(pattern: string) {
+    for (const k of this.store.keys()) if (k.includes(pattern)) this.store.delete(k);
+  }
+  prune() {
+    const now = Date.now(); let n = 0;
+    for (const [k, e] of this.store) { if (now > e.expiresAt) { this.store.delete(k); n++; } }
+    return n;
+  }
+  stats() {
+    const total = this.hits + this.misses;
+    return { size: this.store.size, hits: this.hits, misses: this.misses, hitRate: total > 0 ? Math.round((this.hits / total) * 100) : 0 };
+  }
+}
+
+describe('TTL Cache', () => {
+  it('returns null for missing key', () => {
+    const c = new TestTtlCache();
+    expect(c.get('nope')).toBeNull();
+  });
+
+  it('stores and retrieves a value', () => {
+    const c = new TestTtlCache(10_000);
+    c.set('k', { score: 82 });
+    expect((c.get('k') as any)?.score).toBe(82);
+  });
+
+  it('returns null after TTL expires', async () => {
+    const c = new TestTtlCache();
+    c.set('k', 'val', 1); // 1 ms TTL
+    await new Promise(r => setTimeout(r, 10));
+    expect(c.get('k')).toBeNull();
+  });
+
+  it('increments hit counter on cache hit', () => {
+    const c = new TestTtlCache(10_000);
+    c.set('k', 42);
+    c.get('k');
+    expect(c.stats().hits).toBe(1);
+    expect(c.stats().misses).toBe(0);
+  });
+
+  it('increments miss counter on cache miss', () => {
+    const c = new TestTtlCache(10_000);
+    c.get('missing');
+    expect(c.stats().misses).toBe(1);
+  });
+
+  it('calculates hit rate correctly', () => {
+    const c = new TestTtlCache(10_000);
+    c.set('k', 'v');
+    c.get('k'); c.get('k'); c.get('missing');
+    // 2 hits, 1 miss → 66%
+    expect(c.stats().hitRate).toBe(67);
+  });
+
+  it('invalidatePattern removes matching keys', () => {
+    const c = new TestTtlCache(10_000);
+    c.set('brand:score:30', 1);
+    c.set('brand:score:7',  2);
+    c.set('trends:30',      3);
+    c.invalidatePattern('brand:score');
+    expect(c.get('brand:score:30')).toBeNull();
+    expect(c.get('brand:score:7')).toBeNull();
+    expect(c.get('trends:30')).toBe(3); // unaffected
+  });
+
+  it('flush clears all entries', () => {
+    const c = new TestTtlCache(10_000);
+    c.set('a', 1); c.set('b', 2);
+    c.flush();
+    expect(c.stats().size).toBe(0);
+  });
+
+  it('prune removes only expired entries', async () => {
+    const c = new TestTtlCache(10_000);
+    c.set('stale', 'x', 1); // 1 ms
+    c.set('fresh', 'y', 10_000);
+    await new Promise(r => setTimeout(r, 10));
+    const pruned = c.prune();
+    expect(pruned).toBe(1);
+    expect(c.get('fresh')).toBe('y');
+  });
+});
+
+// ============================================================================
+// AUDIENCE SEGMENT LOGIC TESTS
+// Test the engagement-tier classification rules in isolation.
+// ============================================================================
+
+interface AuthorRow { post_count: number; avg_sent: number }
+
+function classifyTier(r: AuthorRow): 'Power Users' | 'Active' | 'Casual' {
+  if (r.post_count >= 5) return 'Power Users';
+  if (r.post_count >= 2) return 'Active';
+  return 'Casual';
+}
+
+function summarisePeriodPct(total: number, positive: number): number {
+  return total > 0 ? Math.round((positive / total) * 100) : 0;
+}
+
+describe('Audience Segments — engagement tier classification', () => {
+  it('classifies author with 5+ posts as Power User', () => {
+    expect(classifyTier({ post_count: 5, avg_sent: 0.5 })).toBe('Power Users');
+    expect(classifyTier({ post_count: 10, avg_sent: 0.1 })).toBe('Power Users');
+  });
+
+  it('classifies author with 2-4 posts as Active', () => {
+    expect(classifyTier({ post_count: 2, avg_sent: 0 })).toBe('Active');
+    expect(classifyTier({ post_count: 4, avg_sent: -0.2 })).toBe('Active');
+  });
+
+  it('classifies author with 1 post as Casual', () => {
+    expect(classifyTier({ post_count: 1, avg_sent: 0.8 })).toBe('Casual');
+  });
+
+  it('correctly counts authors in each tier', () => {
+    const authors: AuthorRow[] = [
+      { post_count: 7, avg_sent: 0.4 },
+      { post_count: 5, avg_sent: 0.1 },
+      { post_count: 3, avg_sent: -0.2 },
+      { post_count: 1, avg_sent: 0.5 },
+      { post_count: 1, avg_sent: 0.3 },
+    ];
+    const power  = authors.filter(r => classifyTier(r) === 'Power Users').length;
+    const active = authors.filter(r => classifyTier(r) === 'Active').length;
+    const casual = authors.filter(r => classifyTier(r) === 'Casual').length;
+    expect(power).toBe(2);
+    expect(active).toBe(1);
+    expect(casual).toBe(2);
+  });
+});
+
+describe('Audience Segments — time-of-day positive percentage', () => {
+  it('returns 0 when no mentions', () => {
+    expect(summarisePeriodPct(0, 0)).toBe(0);
+  });
+
+  it('returns 100 when all are positive', () => {
+    expect(summarisePeriodPct(50, 50)).toBe(100);
+  });
+
+  it('returns rounded percentage', () => {
+    // 1 out of 3 = 33.33% → rounds to 33
+    expect(summarisePeriodPct(3, 1)).toBe(33);
+  });
+
+  it('rounds 0.5 correctly', () => {
+    // 1 out of 2 = 50
+    expect(summarisePeriodPct(2, 1)).toBe(50);
+  });
+});
