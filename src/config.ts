@@ -92,6 +92,14 @@ const configSchema = z.object({
     headless: bool('true'),
     slowMo: z.string().default('0').transform(Number),
   }),
+
+  // Reddit OAuth (for Outreach module)
+  reddit: z.object({
+    clientId: z.string().default(''),
+    clientSecret: z.string().default(''),
+    redirectUri: z.string().default('http://localhost:3000/outreach/auth/callback'),
+    userAgent: z.string().default('SocialMonitor/2.0'),
+  }),
 });
 
 // Validate Environment
@@ -143,6 +151,13 @@ const rawConfig = {
   browser: {
     headless: process.env.HEADLESS,
     slowMo: process.env.SLOWMO,
+  },
+
+  reddit: {
+    clientId: process.env.REDDIT_CLIENT_ID,
+    clientSecret: process.env.REDDIT_CLIENT_SECRET,
+    redirectUri: process.env.REDDIT_REDIRECT_URI,
+    userAgent: process.env.REDDIT_USER_AGENT,
   },
 };
 

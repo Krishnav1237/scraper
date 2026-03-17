@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import crypto from 'crypto';
 import { config } from '../config.js';
 import { logger } from '../core/logger.js';
 import {
@@ -9,6 +10,13 @@ import {
   getEntities, getEntityById, createEntity, updateEntity, deleteEntity,
   getAlertRules, getAlertRuleById, createAlertRule, updateAlertRule, deleteAlertRule,
   getAlertEvents, getTrends, evaluateAlerts,
+  getOutreachAuth, saveOutreachAuth, clearOutreachAuth,
+  saveOAuthState, verifyAndDeleteOAuthState,
+  getOutreachSubreddits, getOutreachSubredditById, createOutreachSubreddit,
+  updateOutreachSubreddit, deleteOutreachSubreddit,
+  getOutreachDrafts, getOutreachDraftById, createOutreachDraft,
+  updateOutreachDraft, deleteOutreachDraft,
+  createPostAttempt, getPostAttempts, OutreachAuth,
 } from '../db/queries.js';
 import { GoogleSheetsService } from '../core/googleSheets.js';
 import { getScheduleInfo } from '../scheduler/jobs.js';
@@ -509,6 +517,315 @@ app.get('/api/export/sheets', async (req, res) => {
     logger.error('Export failed', { error });
     res.status(500).json({ error: 'Export failed. Check server logs.' });
   }
+});
+
+// ============================================================================
+// OUTREACH
+// ============================================================================
+
+// Helper: exchange Reddit auth code for tokens
+async function exchangeRedditCode(code: string): Promise<Omit<OutreachAuth, 'id' | 'created_at' | 'updated_at'> | null> {
+  try {
+    const credentials = Buffer.from(`${config.reddit.clientId}:${config.reddit.clientSecret}`).toString('base64');
+    const response = await fetch('https://www.reddit.com/api/v1/access_token', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'User-Agent': config.reddit.userAgent,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: config.reddit.redirectUri,
+      }).toString(),
+    });
+    if (!response.ok) return null;
+    const data = await response.json() as any;
+    if (data.error || !data.access_token) return null;
+    // Fetch Reddit username
+    let reddit_username: string | null = null;
+    try {
+      const meRes = await fetch('https://oauth.reddit.com/api/v1/me', {
+        headers: {
+          'Authorization': `Bearer ${data.access_token}`,
+          'User-Agent': config.reddit.userAgent,
+        },
+      });
+      if (meRes.ok) {
+        const me = await meRes.json() as any;
+        reddit_username = me.name ?? null;
+      }
+    } catch { /* ignore */ }
+    const expiresAt = new Date(Date.now() + (data.expires_in ?? 3600) * 1000).toISOString();
+    return {
+      access_token: data.access_token,
+      refresh_token: data.refresh_token ?? null,
+      scope: data.scope ?? null,
+      token_type: data.token_type ?? null,
+      expires_at: expiresAt,
+      reddit_username,
+    };
+  } catch (err) {
+    logger.error('Reddit token exchange failed', { err });
+    return null;
+  }
+}
+
+// Helper: refresh Reddit access token
+async function refreshRedditToken(refreshToken: string): Promise<Omit<OutreachAuth, 'id' | 'created_at' | 'updated_at'> | null> {
+  try {
+    const credentials = Buffer.from(`${config.reddit.clientId}:${config.reddit.clientSecret}`).toString('base64');
+    const response = await fetch('https://www.reddit.com/api/v1/access_token', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'User-Agent': config.reddit.userAgent,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+      }).toString(),
+    });
+    if (!response.ok) return null;
+    const data = await response.json() as any;
+    if (data.error || !data.access_token) return null;
+    const expiresAt = new Date(Date.now() + (data.expires_in ?? 3600) * 1000).toISOString();
+    const existing = getOutreachAuth();
+    return {
+      access_token: data.access_token,
+      refresh_token: data.refresh_token ?? refreshToken,
+      scope: data.scope ?? existing?.scope ?? null,
+      token_type: data.token_type ?? existing?.token_type ?? null,
+      expires_at: expiresAt,
+      reddit_username: existing?.reddit_username ?? null,
+    };
+  } catch (err) {
+    logger.error('Reddit token refresh failed', { err });
+    return null;
+  }
+}
+
+// Helper: get a valid access token (refresh if expired)
+async function getValidAccessToken(): Promise<string | null> {
+  const auth = getOutreachAuth();
+  if (!auth?.access_token) return null;
+  if (auth.expires_at && new Date(auth.expires_at) < new Date(Date.now() + 60_000)) {
+    if (!auth.refresh_token) return null;
+    const refreshed = await refreshRedditToken(auth.refresh_token);
+    if (!refreshed) return null;
+    saveOutreachAuth(refreshed);
+    return refreshed.access_token;
+  }
+  return auth.access_token;
+}
+
+// GET /outreach - main page
+app.get('/outreach', (req, res) => {
+  const auth = getOutreachAuth();
+  const subreddits = getOutreachSubreddits();
+  const drafts = getOutreachDrafts();
+  const oauthConfigured = !!(config.reddit.clientId && config.reddit.clientSecret);
+  res.render('outreach', {
+    appName,
+    title: `Outreach – ${appName}`,
+    auth,
+    subreddits,
+    drafts,
+    oauthConfigured,
+    error: req.query.error as string | undefined,
+    success: req.query.success as string | undefined,
+  });
+});
+
+// GET /outreach/auth - start Reddit OAuth flow
+app.get('/outreach/auth', (req, res) => {
+  if (!config.reddit.clientId || !config.reddit.clientSecret) {
+    return res.redirect('/outreach?error=Reddit+OAuth+credentials+not+configured.+Set+REDDIT_CLIENT_ID+and+REDDIT_CLIENT_SECRET+in+.env');
+  }
+  const state = crypto.randomBytes(16).toString('hex');
+  saveOAuthState(state);
+  const authUrl = new URL('https://www.reddit.com/api/v1/authorize');
+  authUrl.searchParams.set('client_id', config.reddit.clientId);
+  authUrl.searchParams.set('response_type', 'code');
+  authUrl.searchParams.set('state', state);
+  authUrl.searchParams.set('redirect_uri', config.reddit.redirectUri);
+  authUrl.searchParams.set('duration', 'permanent');
+  authUrl.searchParams.set('scope', 'submit identity');
+  res.redirect(authUrl.toString());
+});
+
+// GET /outreach/auth/callback - Reddit OAuth callback
+app.get('/outreach/auth/callback', async (req, res) => {
+  const { code, state, error } = req.query as Record<string, string>;
+  if (error) {
+    return res.redirect(`/outreach?error=Reddit+access+denied:+${encodeURIComponent(error)}`);
+  }
+  if (!state || !verifyAndDeleteOAuthState(state)) {
+    return res.redirect('/outreach?error=Invalid+or+expired+OAuth+state.+Please+try+again.');
+  }
+  if (!code) {
+    return res.redirect('/outreach?error=No+authorization+code+received+from+Reddit.');
+  }
+  const tokenData = await exchangeRedditCode(code);
+  if (!tokenData) {
+    return res.redirect('/outreach?error=Failed+to+exchange+code+for+token.+Check+your+Reddit+app+credentials.');
+  }
+  saveOutreachAuth(tokenData);
+  logger.info(`Reddit outreach connected as u/${tokenData.reddit_username}`);
+  res.redirect(`/outreach?success=Reddit+connected+as+u%2F${encodeURIComponent(tokenData.reddit_username ?? 'unknown')}`);
+});
+
+// POST /outreach/auth/disconnect
+app.post('/outreach/auth/disconnect', (req, res) => {
+  clearOutreachAuth();
+  res.redirect('/outreach?success=Reddit+account+disconnected');
+});
+
+// POST /outreach/subreddits - add target subreddit
+app.post('/outreach/subreddits', (req, res) => {
+  try {
+    const { name, notes, cooldown_hours } = req.body;
+    const cleaned = (name || '').trim().replace(/^r\//, '').toLowerCase();
+    if (!cleaned) {
+      return res.redirect('/outreach?error=Subreddit+name+is+required');
+    }
+    createOutreachSubreddit({
+      name: cleaned,
+      notes: notes?.trim() || null,
+      cooldown_hours: parseInt(cooldown_hours) || 168,
+    });
+    res.redirect('/outreach?success=Subreddit+added');
+  } catch (err: any) {
+    logger.error('Add subreddit failed', { err });
+    const msg = String(err?.message || err).includes('UNIQUE') ? 'Subreddit+already+exists' : 'Failed+to+add+subreddit';
+    res.redirect(`/outreach?error=${msg}`);
+  }
+});
+
+// POST /outreach/subreddits/:id/toggle
+app.post('/outreach/subreddits/:id/toggle', (req, res) => {
+  const sub = getOutreachSubredditById(parseInt(req.params.id));
+  if (sub) {
+    updateOutreachSubreddit(sub.id!, { enabled: sub.enabled ? 0 : 1 });
+  }
+  res.redirect('/outreach');
+});
+
+// POST /outreach/subreddits/:id/delete
+app.post('/outreach/subreddits/:id/delete', (req, res) => {
+  deleteOutreachSubreddit(parseInt(req.params.id));
+  res.redirect('/outreach?success=Subreddit+removed');
+});
+
+// POST /outreach/drafts - create draft
+app.post('/outreach/drafts', (req, res) => {
+  try {
+    const { subreddit_id, kind, title, body, url, disclosure } = req.body;
+    if (!subreddit_id || !kind || !title?.trim()) {
+      return res.redirect('/outreach?error=Subreddit%2C+type+and+title+are+required');
+    }
+    if (kind === 'link' && !url?.trim()) {
+      return res.redirect('/outreach?error=URL+is+required+for+link+posts');
+    }
+    createOutreachDraft({
+      subreddit_id: parseInt(subreddit_id),
+      kind: kind as 'self' | 'link',
+      title: title.trim(),
+      body: kind === 'self' ? (body?.trim() || null) : null,
+      url: kind === 'link' ? (url?.trim() || null) : null,
+      disclosure: disclosure?.trim() || null,
+    });
+    res.redirect('/outreach?success=Draft+created');
+  } catch (err) {
+    logger.error('Create draft failed', { err });
+    res.redirect('/outreach?error=Failed+to+create+draft');
+  }
+});
+
+// POST /outreach/drafts/:id/submit - submit draft to Reddit
+app.post('/outreach/drafts/:id/submit', async (req, res) => {
+  const draftId = parseInt(req.params.id);
+  const draft = getOutreachDraftById(draftId);
+  if (!draft) {
+    return res.redirect('/outreach?error=Draft+not+found');
+  }
+  if (draft.status === 'posted') {
+    return res.redirect('/outreach?error=This+draft+has+already+been+posted');
+  }
+  const accessToken = await getValidAccessToken();
+  if (!accessToken) {
+    return res.redirect('/outreach?error=Reddit+account+not+connected+or+token+expired.+Please+reconnect.');
+  }
+  const subreddit = getOutreachSubredditById(draft.subreddit_id);
+  if (!subreddit || !subreddit.enabled) {
+    return res.redirect('/outreach?error=Target+subreddit+is+disabled+or+not+found');
+  }
+  try {
+    const submitBody = new URLSearchParams({
+      sr: subreddit.name,
+      kind: draft.kind,
+      title: draft.title,
+      resubmit: 'true',
+      nsfw: 'false',
+    });
+    if (draft.kind === 'self') {
+      submitBody.set('text', draft.body || '');
+    } else {
+      submitBody.set('url', draft.url || '');
+    }
+    const response = await fetch('https://oauth.reddit.com/api/submit', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'User-Agent': config.reddit.userAgent,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: submitBody.toString(),
+    });
+    const json = await response.json() as any;
+    const responseStr = JSON.stringify(json);
+    // Reddit wraps errors in json.json.errors or json.json.data
+    const errors = json?.json?.errors as [string, string, string][] | undefined;
+    if (errors && errors.length > 0) {
+      const errorMsg = errors[0][1] ?? 'Unknown Reddit error';
+      createPostAttempt({ draft_id: draftId, status: 'failed', response_json: responseStr, error: errorMsg });
+      updateOutreachDraft(draftId, { status: 'failed', last_error: errorMsg });
+      logger.warn(`Reddit submit failed for draft ${draftId}: ${errorMsg}`);
+      return res.redirect(`/outreach?error=Reddit+rejected+the+post:+${encodeURIComponent(errorMsg)}`);
+    }
+    const postUrl: string | undefined = json?.json?.data?.url;
+    const postId: string | undefined = postUrl ? postUrl.split('/comments/')[1]?.split('/')[0] : undefined;
+    createPostAttempt({ draft_id: draftId, status: 'success', response_json: responseStr, error: null });
+    updateOutreachDraft(draftId, {
+      status: 'posted',
+      reddit_post_id: postId ?? null,
+      reddit_post_url: postUrl ?? null,
+      posted_at: new Date().toISOString(),
+      last_error: null,
+    });
+    logger.info(`Reddit post submitted successfully: ${postUrl}`);
+    res.redirect(`/outreach?success=Post+submitted+to+r%2F${encodeURIComponent(subreddit.name)}`);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    createPostAttempt({ draft_id: draftId, status: 'failed', response_json: null, error: errorMsg });
+    updateOutreachDraft(draftId, { status: 'failed', last_error: errorMsg });
+    logger.error('Reddit submit error', { err });
+    res.redirect(`/outreach?error=Failed+to+submit+post:+${encodeURIComponent(errorMsg)}`);
+  }
+});
+
+// POST /outreach/drafts/:id/delete
+app.post('/outreach/drafts/:id/delete', (req, res) => {
+  deleteOutreachDraft(parseInt(req.params.id));
+  res.redirect('/outreach?success=Draft+deleted');
+});
+
+// GET /api/outreach/drafts/:id/attempts - get post attempts for a draft
+app.get('/api/outreach/drafts/:id/attempts', (req, res) => {
+  const attempts = getPostAttempts(parseInt(req.params.id));
+  res.json(attempts);
 });
 
 export function startServer() {

@@ -690,6 +690,203 @@ export function getTrends(days = 30): TrendPoint[] {
 }
 
 // ============================================================================
+// OUTREACH
+// ============================================================================
+
+export interface OutreachAuth {
+  id: 1;
+  access_token: string | null;
+  refresh_token: string | null;
+  scope: string | null;
+  token_type: string | null;
+  expires_at: string | null;
+  reddit_username: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface OutreachSubreddit {
+  id?: number;
+  name: string;
+  enabled: number;
+  notes: string | null;
+  cooldown_hours: number;
+  rules_json: string | null;
+  last_rules_sync_at: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface OutreachDraft {
+  id?: number;
+  subreddit_id: number;
+  kind: 'self' | 'link';
+  title: string;
+  body: string | null;
+  url: string | null;
+  disclosure: string | null;
+  status: 'draft' | 'posted' | 'failed';
+  reddit_post_id: string | null;
+  reddit_post_url: string | null;
+  last_error: string | null;
+  posted_at: string | null;
+  created_at?: string;
+  updated_at?: string;
+  // Joined
+  subreddit_name?: string;
+}
+
+export interface OutreachPostAttempt {
+  id?: number;
+  draft_id: number;
+  status: 'success' | 'failed';
+  response_json: string | null;
+  error: string | null;
+  attempted_at?: string;
+}
+
+// ---- Auth ----
+
+export function getOutreachAuth(): OutreachAuth | null {
+  return db.prepare('SELECT * FROM outreach_reddit_auth WHERE id = 1').get() as OutreachAuth | null;
+}
+
+export function saveOutreachAuth(data: Omit<OutreachAuth, 'id' | 'created_at' | 'updated_at'>): void {
+  db.prepare(`
+    INSERT INTO outreach_reddit_auth (id, access_token, refresh_token, scope, token_type, expires_at, reddit_username, updated_at)
+    VALUES (1, @access_token, @refresh_token, @scope, @token_type, @expires_at, @reddit_username, datetime('now'))
+    ON CONFLICT(id) DO UPDATE SET
+      access_token = excluded.access_token,
+      refresh_token = excluded.refresh_token,
+      scope = excluded.scope,
+      token_type = excluded.token_type,
+      expires_at = excluded.expires_at,
+      reddit_username = excluded.reddit_username,
+      updated_at = datetime('now')
+  `).run(data);
+}
+
+export function clearOutreachAuth(): void {
+  db.prepare('DELETE FROM outreach_reddit_auth WHERE id = 1').run();
+}
+
+// ---- OAuth states ----
+
+export function saveOAuthState(state: string): void {
+  db.prepare(`INSERT INTO outreach_oauth_states (state, created_at) VALUES (?, datetime('now'))`).run(state);
+}
+
+export function verifyAndDeleteOAuthState(state: string): boolean {
+  db.prepare(`DELETE FROM outreach_oauth_states WHERE created_at < datetime('now', '-10 minutes')`).run();
+  const row = db.prepare('SELECT state FROM outreach_oauth_states WHERE state = ?').get(state);
+  if (row) {
+    db.prepare('DELETE FROM outreach_oauth_states WHERE state = ?').run(state);
+    return true;
+  }
+  return false;
+}
+
+// ---- Subreddits ----
+
+export function getOutreachSubreddits(): OutreachSubreddit[] {
+  return db.prepare('SELECT * FROM outreach_subreddits ORDER BY name ASC').all() as OutreachSubreddit[];
+}
+
+export function getOutreachSubredditById(id: number): OutreachSubreddit | null {
+  return db.prepare('SELECT * FROM outreach_subreddits WHERE id = ?').get(id) as OutreachSubreddit | null;
+}
+
+export function createOutreachSubreddit(data: Pick<OutreachSubreddit, 'name' | 'notes' | 'cooldown_hours'>): OutreachSubreddit {
+  const result = db.prepare(`
+    INSERT INTO outreach_subreddits (name, enabled, notes, cooldown_hours)
+    VALUES (@name, 1, @notes, @cooldown_hours)
+  `).run(data);
+  return getOutreachSubredditById(result.lastInsertRowid as number)!;
+}
+
+export function updateOutreachSubreddit(id: number, data: Partial<OutreachSubreddit>): void {
+  const existing = getOutreachSubredditById(id);
+  if (!existing) return;
+  const merged = { ...existing, ...data, updated_at: new Date().toISOString() };
+  db.prepare(`
+    UPDATE outreach_subreddits SET name=@name, enabled=@enabled, notes=@notes,
+      cooldown_hours=@cooldown_hours, rules_json=@rules_json,
+      last_rules_sync_at=@last_rules_sync_at, updated_at=@updated_at
+    WHERE id=@id
+  `).run({ ...merged, id });
+}
+
+export function deleteOutreachSubreddit(id: number): void {
+  db.prepare('DELETE FROM outreach_subreddits WHERE id = ?').run(id);
+}
+
+// ---- Drafts ----
+
+export function getOutreachDrafts(subredditId?: number): OutreachDraft[] {
+  if (subredditId !== undefined) {
+    return db.prepare(`
+      SELECT d.*, s.name as subreddit_name
+      FROM outreach_drafts d JOIN outreach_subreddits s ON d.subreddit_id = s.id
+      WHERE d.subreddit_id = ?
+      ORDER BY d.created_at DESC
+    `).all(subredditId) as OutreachDraft[];
+  }
+  return db.prepare(`
+    SELECT d.*, s.name as subreddit_name
+    FROM outreach_drafts d JOIN outreach_subreddits s ON d.subreddit_id = s.id
+    ORDER BY d.created_at DESC
+  `).all() as OutreachDraft[];
+}
+
+export function getOutreachDraftById(id: number): OutreachDraft | null {
+  return db.prepare(`
+    SELECT d.*, s.name as subreddit_name
+    FROM outreach_drafts d JOIN outreach_subreddits s ON d.subreddit_id = s.id
+    WHERE d.id = ?
+  `).get(id) as OutreachDraft | null;
+}
+
+export function createOutreachDraft(
+  data: Pick<OutreachDraft, 'subreddit_id' | 'kind' | 'title' | 'body' | 'url' | 'disclosure'>
+): OutreachDraft {
+  const result = db.prepare(`
+    INSERT INTO outreach_drafts (subreddit_id, kind, title, body, url, disclosure, status)
+    VALUES (@subreddit_id, @kind, @title, @body, @url, @disclosure, 'draft')
+  `).run(data);
+  return getOutreachDraftById(result.lastInsertRowid as number)!;
+}
+
+export function updateOutreachDraft(id: number, data: Partial<Omit<OutreachDraft, 'id' | 'created_at' | 'subreddit_name'>>): void {
+  const existing = getOutreachDraftById(id);
+  if (!existing) return;
+  const merged = { ...existing, ...data, updated_at: new Date().toISOString() };
+  db.prepare(`
+    UPDATE outreach_drafts SET subreddit_id=@subreddit_id, kind=@kind, title=@title,
+      body=@body, url=@url, disclosure=@disclosure, status=@status,
+      reddit_post_id=@reddit_post_id, reddit_post_url=@reddit_post_url,
+      last_error=@last_error, posted_at=@posted_at, updated_at=@updated_at
+    WHERE id=@id
+  `).run({ ...merged, id });
+}
+
+export function deleteOutreachDraft(id: number): void {
+  db.prepare('DELETE FROM outreach_drafts WHERE id = ?').run(id);
+}
+
+// ---- Post attempts ----
+
+export function createPostAttempt(data: Omit<OutreachPostAttempt, 'id' | 'attempted_at'>): void {
+  db.prepare(`
+    INSERT INTO outreach_post_attempts (draft_id, status, response_json, error)
+    VALUES (@draft_id, @status, @response_json, @error)
+  `).run(data);
+}
+
+export function getPostAttempts(draftId: number): OutreachPostAttempt[] {
+  return db.prepare('SELECT * FROM outreach_post_attempts WHERE draft_id = ? ORDER BY attempted_at DESC').all(draftId) as OutreachPostAttempt[];
+}
+
+// ============================================================================
 // ALERT EVALUATION
 // ============================================================================
 
