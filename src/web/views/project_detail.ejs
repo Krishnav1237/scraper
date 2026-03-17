@@ -153,6 +153,7 @@
                   <div style="font-size: 0.75rem; color: #6B7280; margin-top: 2px;">
                     ${r.type === 'mention_spike' ? '📈' : '😟'} ${r.type === 'mention_spike' ? 'Spike' : 'Negative sentiment'} ≥ ${r.threshold}${r.type === 'negative_sentiment' ? '%' : ''} in ${r.window_hours}h
                   </div>
+                  ${r.webhook_url ? `<div style="font-size: 0.7rem; color: #6366F1; margin-top: 2px;">🔗 Webhook configured</div>` : ''}
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center;">
                   <form method="POST" action="/alerts/${r.id}/toggle">
@@ -186,6 +187,10 @@
               <label style="font-size: 0.75rem; color: #6B7280; display: block; margin-bottom: 4px;">Window (hours)</label>
               <input type="number" name="window_hours" placeholder="24" min="1" max="720" style="width: 100%; height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.875rem; box-sizing: border-box;">
             </div>
+          </div>
+          <div>
+            <label style="font-size: 0.75rem; color: #6B7280; display: block; margin-bottom: 4px;">Webhook URL <span style="color:#9CA3AF;">(optional – Slack/Discord/HTTP)</span></label>
+            <input type="url" name="webhook_url" placeholder="https://hooks.slack.com/…" style="width: 100%; height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.875rem; box-sizing: border-box;">
           </div>
           <button type="submit" style="height: 36px; background: #2563EB; color: white; border: none; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer;">Add Rule</button>
         </form>

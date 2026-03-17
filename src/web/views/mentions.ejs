@@ -84,6 +84,7 @@
             <th>Feedback</th>
             <th style="width: 180px;">Engagement</th>
             <th style="width: 120px;">Sentiment</th>
+            <th style="width: 60px;">Inbox</th>
           </tr>
         </thead>
         <tbody>
@@ -121,6 +122,14 @@
                   ${m.sentiment_label || 'neu'}
                 </span>
               </td>
+              <td style="vertical-align: top; white-space: nowrap;">
+                <button title="${m.bookmarked ? 'Remove bookmark' : 'Bookmark'}"
+                  onclick="toggleMentionBookmark(${m.id}, ${m.bookmarked ? 0 : 1}, this)"
+                  style="background: none; border: none; font-size: 1rem; cursor: pointer; opacity: ${m.bookmarked ? 1 : 0.35};">⭐</button>
+                <button title="${m.action_required ? 'Remove action flag' : 'Flag for action'}"
+                  onclick="toggleMentionAction(${m.id}, ${m.action_required ? 0 : 1}, this)"
+                  style="background: none; border: none; font-size: 1rem; cursor: pointer; opacity: ${m.action_required ? 1 : 0.35};">🔔</button>
+              </td>
             </tr>
           `).join('')}
         </tbody>
@@ -138,5 +147,18 @@
        ${mentions.length >= 50 ? `<a href="?${buildParams({ offset: (filters.offset || 0) + 50 })}" class="btn btn-secondary" style="height: 40px; padding: 0 24px; font-weight: 500;">Next</a>` : ''}
     </div>
   `}
+
+<script>
+async function toggleMentionBookmark(id, val, btn) {
+  await fetch('/mentions/' + id + '/bookmark', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ bookmarked: val ? '1' : '0' }) });
+  btn.style.opacity = val ? '1' : '0.35';
+  btn.title = val ? 'Remove bookmark' : 'Bookmark';
+}
+async function toggleMentionAction(id, val, btn) {
+  await fetch('/mentions/' + id + '/action', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ required: val ? '1' : '0' }) });
+  btn.style.opacity = val ? '1' : '0.35';
+  btn.title = val ? 'Remove action flag' : 'Flag for action';
+}
+</script>
 ` }) %>
 

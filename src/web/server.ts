@@ -17,6 +17,11 @@ import {
   getOutreachDrafts, getOutreachDraftById, createOutreachDraft,
   updateOutreachDraft, deleteOutreachDraft,
   createPostAttempt, getPostAttempts, OutreachAuth,
+  // New features
+  getInboxMentions, getInboxStats,
+  setMentionBookmark, setMentionActionRequired, setMentionActionStatus, setMentionNotes,
+  getEntityComparison,
+  getWeeklyDigest,
 } from '../db/queries.js';
 import { GoogleSheetsService } from '../core/googleSheets.js';
 import { getScheduleInfo } from '../scheduler/jobs.js';
@@ -304,7 +309,7 @@ app.post('/entities/:id/delete', (req, res) => {
 app.post('/projects/:projectId/alerts', (req, res) => {
   const projectId = parseInt(req.params.projectId);
   try {
-    const { name, type, threshold, window_hours } = req.body;
+    const { name, type, threshold, window_hours, webhook_url } = req.body;
     if (!name?.trim() || !type || !threshold) {
       return res.redirect(`/projects/${projectId}?error=Alert+name%2C+type+and+threshold+are+required`);
     }
@@ -315,6 +320,7 @@ app.post('/projects/:projectId/alerts', (req, res) => {
       threshold: parseFloat(threshold),
       window_hours: parseInt(window_hours) || 24,
       enabled: 1,
+      webhook_url: webhook_url?.trim() || null,
     });
     res.redirect(`/projects/${projectId}?success=Alert+rule+created`);
   } catch (err) {
@@ -962,6 +968,122 @@ app.post('/outreach/drafts/:id/delete', (req, res) => {
 app.get('/api/outreach/drafts/:id/attempts', (req, res) => {
   const attempts = getPostAttempts(parseInt(req.params.id));
   res.json(attempts);
+});
+
+// ============================================================================
+// FEATURE: RESPONSE INBOX (bookmarked / action-required mentions)
+// ============================================================================
+
+// Page: GET /inbox
+app.get('/inbox', (req, res) => {
+  const { status, bookmarked, action_required } = req.query as Record<string, string>;
+  const filters: Record<string, any> = { limit: 100 };
+  if (status === 'open' || status === 'in_progress' || status === 'resolved') filters.action_status = status;
+  if (bookmarked === '1') filters.bookmarked = true;
+  if (action_required === '1') filters.action_required = true;
+  const mentions = getInboxMentions(filters);
+  const stats = getInboxStats();
+  res.render('inbox', {
+    title: `${config.appName} – Response Inbox`,
+    appName: config.appName,
+    mentions,
+    stats,
+    filters: req.query,
+  });
+});
+
+// API: toggle bookmark
+app.post('/mentions/:id/bookmark', (req, res) => {
+  const id = parseInt(req.params.id);
+  const { bookmarked } = req.body;
+  setMentionBookmark(id, bookmarked === '1' || bookmarked === 'true');
+  res.json({ ok: true });
+});
+
+// API: toggle action-required
+app.post('/mentions/:id/action', (req, res) => {
+  const id = parseInt(req.params.id);
+  const { required } = req.body;
+  setMentionActionRequired(id, required === '1' || required === 'true');
+  res.json({ ok: true });
+});
+
+// API: update action status
+app.post('/mentions/:id/status', (req, res) => {
+  const id = parseInt(req.params.id);
+  const { status } = req.body;
+  if (!['open', 'in_progress', 'resolved'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+  setMentionActionStatus(id, status as 'open' | 'in_progress' | 'resolved');
+  res.json({ ok: true });
+});
+
+// API: save internal notes
+app.post('/mentions/:id/notes', (req, res) => {
+  const id = parseInt(req.params.id);
+  const { notes } = req.body;
+  setMentionNotes(id, (notes || '').toString().slice(0, 2000));
+  res.json({ ok: true });
+});
+
+// API: inbox JSON
+app.get('/api/inbox', (req, res) => {
+  const mentions = getInboxMentions({ limit: 200 });
+  const stats = getInboxStats();
+  res.json({ stats, mentions });
+});
+
+// ============================================================================
+// FEATURE: COMPETITOR / ENTITY COMPARISON
+// ============================================================================
+
+// Page: GET /compare?projectId=1
+app.get('/compare', (req, res) => {
+  const projects = getProjects();
+  const projectId = req.query.projectId ? parseInt(req.query.projectId as string) : (projects[0]?.id ?? null);
+  const project = projectId ? getProjectById(projectId) : null;
+  const days = parseInt((req.query.days as string) || '30');
+  const stats = projectId ? getEntityComparison(projectId, days) : [];
+  res.render('compare', {
+    title: `${config.appName} – Competitor Comparison`,
+    appName: config.appName,
+    projects,
+    project,
+    projectId,
+    days,
+    stats,
+  });
+});
+
+// API: competitor comparison JSON
+app.get('/api/compare', (req, res) => {
+  const projectId = req.query.projectId ? parseInt(req.query.projectId as string) : 1;
+  const days = parseInt((req.query.days as string) || '30');
+  const stats = getEntityComparison(projectId, days);
+  res.json({ projectId, days, entities: stats });
+});
+
+// ============================================================================
+// FEATURE: WEEKLY DIGEST REPORT
+// ============================================================================
+
+// Page: GET /report
+app.get('/report', (req, res) => {
+  const weeksAgo = parseInt((req.query.weeksAgo as string) || '0');
+  const digest = getWeeklyDigest(weeksAgo);
+  res.render('report', {
+    title: `${config.appName} – Weekly Digest`,
+    appName: config.appName,
+    digest,
+    weeksAgo,
+  });
+});
+
+// API: digest JSON
+app.get('/api/report/weekly', (req, res) => {
+  const weeksAgo = parseInt((req.query.weeksAgo as string) || '0');
+  res.json(getWeeklyDigest(weeksAgo));
 });
 
 export function startServer() {

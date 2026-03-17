@@ -1,0 +1,117 @@
+<%- include('layout', { body: `
+
+<!-- Page Header -->
+<div class="page-header" style="height: 80px; background: white; border-bottom: 1px solid #E5E7EB; padding: 0 32px; display: flex; align-items: center; gap: 16px;">
+  <div style="flex: 1;">
+    <h1 style="font-size: 1.5rem; font-weight: 700; color: #111827; letter-spacing: -0.01em;">Competitor Comparison</h1>
+    <p style="font-size: 0.8rem; color: #6B7280; margin-top: 2px;">Side-by-side intelligence for your brand and tracked entities.</p>
+  </div>
+  <div style="display: flex; gap: 12px; align-items: center;">
+    <form method="GET" style="display: flex; gap: 8px; align-items: center;">
+      <select name="projectId" onchange="this.form.submit()" style="height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid #D1D5DB; background: white; font-size: 0.875rem; color: #374151;">
+        ${projects.map(p => `<option value="${p.id}" ${p.id === projectId ? 'selected' : ''}>${p.name}</option>`).join('')}
+      </select>
+      <select name="days" onchange="this.form.submit()" style="height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid #D1D5DB; background: white; font-size: 0.875rem; color: #374151;">
+        <option value="7" ${days === 7 ? 'selected' : ''}>Last 7 days</option>
+        <option value="14" ${days === 14 ? 'selected' : ''}>Last 14 days</option>
+        <option value="30" ${days === 30 ? 'selected' : ''}>Last 30 days</option>
+        <option value="90" ${days === 90 ? 'selected' : ''}>Last 90 days</option>
+      </select>
+    </form>
+    <a href="/projects" style="font-size: 0.875rem; color: #2563EB; text-decoration: none; font-weight: 500;">Manage Entities &rarr;</a>
+  </div>
+</div>
+
+<div style="padding: 32px;">
+
+  ${!stats || stats.length === 0 ? `
+  <div style="text-align: center; padding: 80px 24px;">
+    <div style="font-size: 3rem; margin-bottom: 12px;">🔭</div>
+    <h2 style="font-size: 1.25rem; font-weight: 600; color: #6B7280; margin-bottom: 8px;">No entities tracked yet</h2>
+    <p style="font-size: 0.875rem; color: #9CA3AF;">Add your brand and competitor entities in the <a href="/projects" style="color: #2563EB;">Projects page</a> to start comparing.</p>
+  </div>
+  ` : `
+
+  <!-- Summary Cards Row -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 32px;">
+    ${stats.map(e => `
+    <div style="background: white; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px; border-top: 4px solid ${e.color};">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+        <div>
+          <div style="font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #6B7280; margin-bottom: 4px;">${e.entity_type}</div>
+          <div style="font-size: 1rem; font-weight: 700; color: #111827;">${e.entity_name}</div>
+        </div>
+        <div style="width: 12px; height: 12px; background: ${e.color}; border-radius: 50%; margin-top: 4px;"></div>
+      </div>
+      <div style="font-size: 2rem; font-weight: 800; color: #111827; margin-bottom: 4px;">${e.total_mentions}</div>
+      <div style="font-size: 0.75rem; color: #6B7280;">mentions in last ${days} days</div>
+      <div style="display: flex; height: 4px; background: #F3F4F6; border-radius: 2px; margin-top: 12px; overflow: hidden;">
+        <div style="width: ${e.positive_pct}%; background: #10B981;"></div>
+        <div style="width: ${100 - e.positive_pct - e.negative_pct}%; background: #D1D5DB;"></div>
+        <div style="width: ${e.negative_pct}%; background: #EF4444;"></div>
+      </div>
+      <div style="display: flex; gap: 12px; margin-top: 6px; font-size: 0.7rem;">
+        <span style="color: #059669; font-weight: 600;">${e.positive_pct}% pos</span>
+        <span style="color: #DC2626; font-weight: 600;">${e.negative_pct}% neg</span>
+      </div>
+    </div>
+    `).join('')}
+  </div>
+
+  <!-- Detail Table -->
+  <div style="background: white; border: 1px solid #E5E7EB; border-radius: 12px; overflow: hidden;">
+    <div style="padding: 20px 24px; border-bottom: 1px solid #E5E7EB;">
+      <h2 style="font-size: 1rem; font-weight: 700; color: #111827;">Detailed Comparison &mdash; Last ${days} Days</h2>
+    </div>
+    <div style="overflow-x: auto;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
+        <thead>
+          <tr style="background: #F9FAFB; border-bottom: 1px solid #E5E7EB;">
+            <th style="text-align: left; padding: 12px 24px; font-weight: 600; color: #374151;">Entity</th>
+            <th style="text-align: left; padding: 12px 16px; font-weight: 600; color: #374151;">Type</th>
+            <th style="text-align: right; padding: 12px 16px; font-weight: 600; color: #374151;">Total</th>
+            <th style="text-align: right; padding: 12px 16px; font-weight: 600; color: #374151;">7d</th>
+            <th style="text-align: right; padding: 12px 16px; font-weight: 600; color: #374151;">30d</th>
+            <th style="text-align: right; padding: 12px 16px; font-weight: 600; color: #374151;">Positive</th>
+            <th style="text-align: right; padding: 12px 16px; font-weight: 600; color: #374151;">Negative</th>
+            <th style="text-align: left; padding: 12px 24px; font-weight: 600; color: #374151;">Sentiment Split</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${stats.map(e => `
+          <tr style="border-bottom: 1px solid #F3F4F6;">
+            <td style="padding: 14px 24px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="width: 10px; height: 10px; background: ${e.color}; border-radius: 50%; flex-shrink: 0;"></div>
+                <span style="font-weight: 600; color: #111827;">${e.entity_name}</span>
+              </div>
+            </td>
+            <td style="padding: 14px 16px;">
+              <span style="font-size: 0.75rem; padding: 2px 8px; border-radius: 20px; font-weight: 600;
+                background: ${e.entity_type === 'primary' ? '#EFF6FF' : e.entity_type === 'competitor' ? '#FFF7ED' : '#F5F3FF'};
+                color: ${e.entity_type === 'primary' ? '#1E40AF' : e.entity_type === 'competitor' ? '#C2410C' : '#5B21B6'};">
+                ${e.entity_type}
+              </span>
+            </td>
+            <td style="padding: 14px 16px; text-align: right; font-weight: 700; color: #111827;">${e.total_mentions}</td>
+            <td style="padding: 14px 16px; text-align: right; color: #374151;">${e.last_7d_mentions}</td>
+            <td style="padding: 14px 16px; text-align: right; color: #374151;">${e.last_30d_mentions}</td>
+            <td style="padding: 14px 16px; text-align: right; color: #059669; font-weight: 600;">${e.positive} (${e.positive_pct}%)</td>
+            <td style="padding: 14px 16px; text-align: right; color: #DC2626; font-weight: 600;">${e.negative} (${e.negative_pct}%)</td>
+            <td style="padding: 14px 24px;">
+              <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; width: 120px; background: #F3F4F6;">
+                <div style="width: ${e.positive_pct}%; background: #10B981;"></div>
+                <div style="width: ${100 - e.positive_pct - e.negative_pct}%; background: #D1D5DB;"></div>
+                <div style="width: ${e.negative_pct}%; background: #EF4444;"></div>
+              </div>
+            </td>
+          </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  `}
+</div>
+
+` }) %>

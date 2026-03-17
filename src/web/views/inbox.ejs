@@ -1,0 +1,129 @@
+<%- include('layout', { body: `
+
+<!-- Page Header -->
+<div class="page-header" style="height: 80px; background: white; border-bottom: 1px solid #E5E7EB; padding: 0 32px; display: flex; align-items: center; gap: 16px;">
+  <div style="flex: 1;">
+    <h1 style="font-size: 1.5rem; font-weight: 700; color: #111827; letter-spacing: -0.01em;">Response Inbox</h1>
+    <p style="font-size: 0.8rem; color: #6B7280; margin-top: 2px;">Bookmarked mentions and posts requiring a response from your team.</p>
+  </div>
+  <div style="display: flex; gap: 8px; align-items: center;">
+    <span style="background: #FEF3C7; color: #92400E; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600;">${stats.open} Open</span>
+    <span style="background: #DBEAFE; color: #1E40AF; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600;">${stats.in_progress} In Progress</span>
+    <span style="background: #D1FAE5; color: #065F46; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600;">${stats.resolved} Resolved</span>
+  </div>
+</div>
+
+<!-- Filter Bar -->
+<div style="background: #F9FAFB; padding: 16px 32px; border-bottom: 1px solid #E5E7EB; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+  <a href="/inbox" style="padding: 6px 14px; border-radius: 6px; font-size: 0.8rem; font-weight: 500; text-decoration: none; ${!filters.status ? 'background:#2563EB;color:white;' : 'background:white;color:#374151;border:1px solid #D1D5DB;'}">All Items</a>
+  <a href="/inbox?status=open" style="padding: 6px 14px; border-radius: 6px; font-size: 0.8rem; font-weight: 500; text-decoration: none; ${filters.status === 'open' ? 'background:#2563EB;color:white;' : 'background:white;color:#374151;border:1px solid #D1D5DB;'}">Open</a>
+  <a href="/inbox?status=in_progress" style="padding: 6px 14px; border-radius: 6px; font-size: 0.8rem; font-weight: 500; text-decoration: none; ${filters.status === 'in_progress' ? 'background:#2563EB;color:white;' : 'background:white;color:#374151;border:1px solid #D1D5DB;'}">In Progress</a>
+  <a href="/inbox?status=resolved" style="padding: 6px 14px; border-radius: 6px; font-size: 0.8rem; font-weight: 500; text-decoration: none; ${filters.status === 'resolved' ? 'background:#2563EB;color:white;' : 'background:white;color:#374151;border:1px solid #D1D5DB;'}">Resolved</a>
+  <a href="/inbox?bookmarked=1" style="padding: 6px 14px; border-radius: 6px; font-size: 0.8rem; font-weight: 500; text-decoration: none; ${filters.bookmarked === '1' ? 'background:#2563EB;color:white;' : 'background:white;color:#374151;border:1px solid #D1D5DB;'}">⭐ Bookmarked</a>
+  <a href="/inbox?action_required=1" style="padding: 6px 14px; border-radius: 6px; font-size: 0.8rem; font-weight: 500; text-decoration: none; ${filters.action_required === '1' ? 'background:#2563EB;color:white;' : 'background:white;color:#374151;border:1px solid #D1D5DB;'}">🔔 Action Required</a>
+</div>
+
+<!-- Content -->
+<div style="padding: 24px 32px;">
+
+  ${stats.total === 0 ? `
+  <div style="text-align: center; padding: 80px 24px;">
+    <div style="font-size: 3rem; margin-bottom: 12px;">📭</div>
+    <h2 style="font-size: 1.25rem; font-weight: 600; color: #6B7280; margin-bottom: 8px;">Inbox is empty</h2>
+    <p style="font-size: 0.875rem; color: #9CA3AF;">Bookmark mentions or flag them as &ldquo;action required&rdquo; from the <a href="/mentions" style="color: #2563EB;">Mentions page</a>.</p>
+  </div>
+  ` : ''}
+
+  ${mentions.length === 0 && stats.total > 0 ? `
+  <div style="text-align: center; padding: 60px 24px;">
+    <p style="font-size: 0.875rem; color: #9CA3AF;">No items match the current filter.</p>
+  </div>
+  ` : ''}
+
+  ${mentions.map(m => `
+  <div id="item-${m.id}" style="background: white; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px; margin-bottom: 12px; display: flex; gap: 16px; align-items: flex-start;">
+    
+    <div style="flex-shrink: 0; margin-top: 4px;">
+      <div style="width: 10px; height: 10px; background: ${m.action_status === 'resolved' ? '#10B981' : m.action_status === 'in_progress' ? '#3B82F6' : '#F59E0B'}; border-radius: 50%;"></div>
+    </div>
+
+    <div style="flex: 1; min-width: 0;">
+      <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap;">
+        <span style="font-size: 0.75rem; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.05em;">${m.platform_name || ''}</span>
+        ${m.author ? `<span style="font-size: 0.75rem; color: #9CA3AF;">u/${m.author}</span>` : ''}
+        <span style="font-size: 0.75rem; color: #9CA3AF;">${new Date(m.created_at).toLocaleDateString()}</span>
+        ${m.sentiment_label ? `<span style="font-size: 0.7rem; padding: 2px 8px; border-radius: 20px; font-weight: 600; background: ${m.sentiment_label === 'positive' ? '#D1FAE5' : m.sentiment_label === 'negative' ? '#FEE2E2' : '#F3F4F6'}; color: ${m.sentiment_label === 'positive' ? '#065F46' : m.sentiment_label === 'negative' ? '#991B1B' : '#4B5563'};">${m.sentiment_label}</span>` : ''}
+        ${m.bookmarked ? '<span style="font-size: 0.8rem;" title="Bookmarked">⭐</span>' : ''}
+        ${m.action_required ? '<span style="font-size: 0.8rem;" title="Action Required">🔔</span>' : ''}
+      </div>
+
+      <p style="font-size: 0.875rem; color: #374151; line-height: 1.6; margin-bottom: 10px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;">
+        ${(m.content || '').slice(0, 400)}${(m.content || '').length > 400 ? '&hellip;' : ''}
+      </p>
+
+      ${m.url ? `<a href="${m.url}" target="_blank" rel="noopener" style="font-size: 0.8rem; color: #2563EB; text-decoration: none; margin-bottom: 10px; display: inline-block;">View Original &rarr;</a>` : ''}
+
+      ${m.internal_notes ? `
+      <div style="background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; font-size: 0.8rem; color: #78350F;">
+        📝 <em>${m.internal_notes}</em>
+      </div>
+      ` : ''}
+
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px;">
+        <select onchange="updateStatus(${m.id}, this.value)" style="height: 32px; padding: 0 8px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.8rem; color: #374151; cursor: pointer;">
+          <option value="open" ${m.action_status === 'open' ? 'selected' : ''}>Open</option>
+          <option value="in_progress" ${m.action_status === 'in_progress' ? 'selected' : ''}>In Progress</option>
+          <option value="resolved" ${m.action_status === 'resolved' ? 'selected' : ''}>Resolved</option>
+        </select>
+        <button onclick="toggleBookmark(${m.id}, ${m.bookmarked ? 0 : 1})"
+          style="height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid #D1D5DB; background: ${m.bookmarked ? '#FEF3C7' : 'white'}; font-size: 0.8rem; cursor: pointer; color: #374151;">
+          ${m.bookmarked ? '★ Bookmarked' : '☆ Bookmark'}
+        </button>
+        <button onclick="toggleAction(${m.id}, ${m.action_required ? 0 : 1})"
+          style="height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid #D1D5DB; background: ${m.action_required ? '#FEE2E2' : 'white'}; font-size: 0.8rem; cursor: pointer; color: #374151;">
+          ${m.action_required ? '🔔 Action Set' : '+ Needs Action'}
+        </button>
+        <button onclick="openNotes(${m.id})"
+          style="height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid #D1D5DB; background: white; font-size: 0.8rem; cursor: pointer; color: #374151;">
+          📝 Notes
+        </button>
+      </div>
+
+      <div id="notes-${m.id}" style="display: none; margin-top: 10px;">
+        <textarea id="notes-text-${m.id}" placeholder="Add internal notes…" rows="3" style="width: 100%; padding: 8px; border: 1px solid #D1D5DB; border-radius: 6px; font-size: 0.8rem; font-family: inherit; resize: vertical;">${m.internal_notes || ''}</textarea>
+        <div style="display: flex; gap: 8px; margin-top: 6px;">
+          <button onclick="saveNotes(${m.id})" style="padding: 4px 12px; border-radius: 6px; background: #2563EB; color: white; border: none; font-size: 0.8rem; cursor: pointer;">Save</button>
+          <button onclick="document.getElementById('notes-${m.id}').style.display='none'" style="padding: 4px 12px; border-radius: 6px; background: white; border: 1px solid #D1D5DB; font-size: 0.8rem; cursor: pointer;">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  `).join('')}
+
+</div>
+
+<script>
+async function toggleBookmark(id, val) {
+  await fetch('/mentions/' + id + '/bookmark', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ bookmarked: val ? '1' : '0' }) });
+  location.reload();
+}
+async function toggleAction(id, val) {
+  await fetch('/mentions/' + id + '/action', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ required: val ? '1' : '0' }) });
+  location.reload();
+}
+async function updateStatus(id, status) {
+  await fetch('/mentions/' + id + '/status', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ status }) });
+  location.reload();
+}
+function openNotes(id) {
+  const el = document.getElementById('notes-' + id);
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+async function saveNotes(id) {
+  const notes = document.getElementById('notes-text-' + id).value;
+  await fetch('/mentions/' + id + '/notes', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ notes }) });
+  location.reload();
+}
+</script>
+
+` }) %>

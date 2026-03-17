@@ -1,0 +1,145 @@
+<%
+const maxMentions = digest.daily_trend.length > 0
+  ? Math.max(...digest.daily_trend.map(d => d.mentions), 1)
+  : 1;
+%>
+<%- include('layout', { body: `
+
+<!-- Page Header -->
+<div class="page-header" style="height: 80px; background: white; border-bottom: 1px solid #E5E7EB; padding: 0 32px; display: flex; align-items: center; gap: 16px;">
+  <div style="flex: 1;">
+    <h1 style="font-size: 1.5rem; font-weight: 700; color: #111827; letter-spacing: -0.01em;">Weekly Digest Report</h1>
+    <p style="font-size: 0.8rem; color: #6B7280; margin-top: 2px;">
+      ${digest.period.start} &rarr; ${digest.period.end}
+      &nbsp;&middot;&nbsp; prev: ${digest.prev_period.start} &rarr; ${digest.prev_period.end}
+    </p>
+  </div>
+  <div style="display: flex; gap: 12px; align-items: center;">
+    <a href="/report?weeksAgo=${weeksAgo + 1}" style="height: 36px; padding: 0 16px; display: inline-flex; align-items: center; border-radius: 8px; border: 1px solid #D1D5DB; background: white; font-size: 0.875rem; color: #374151; text-decoration: none; font-weight: 500;">&larr; Previous Week</a>
+    ${weeksAgo > 0 ? `<a href="/report?weeksAgo=${weeksAgo - 1}" style="height: 36px; padding: 0 16px; display: inline-flex; align-items: center; border-radius: 8px; border: 1px solid #D1D5DB; background: white; font-size: 0.875rem; color: #374151; text-decoration: none; font-weight: 500;">Next Week &rarr;</a>` : ''}
+    <a href="/api/report/weekly?weeksAgo=${weeksAgo}" target="_blank" style="height: 36px; padding: 0 16px; display: inline-flex; align-items: center; border-radius: 8px; background: #2563EB; color: white; font-size: 0.875rem; font-weight: 500; text-decoration: none;">Export JSON</a>
+  </div>
+</div>
+
+<div style="padding: 32px; max-width: 1200px;">
+
+  <!-- Hero Metrics Row -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px;">
+    <div style="background: white; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px;">
+      <div style="font-size: 0.75rem; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Mentions</div>
+      <div style="font-size: 2rem; font-weight: 800; color: #111827; margin-bottom: 4px;">${digest.mentions.total}</div>
+      ${digest.mentions.change_pct !== null ? `
+        <div style="font-size: 0.8rem; font-weight: 600; color: ${digest.mentions.change_pct >= 0 ? '#059669' : '#DC2626'};">
+          ${digest.mentions.change_pct >= 0 ? '&uarr;' : '&darr;'} ${Math.abs(digest.mentions.change_pct)}% vs prev week
+        </div>
+      ` : `<div style="font-size: 0.8rem; color: #9CA3AF;">prev week: ${digest.mentions.prev_total}</div>`}
+    </div>
+
+    <div style="background: white; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px;">
+      <div style="font-size: 0.75rem; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Reviews</div>
+      <div style="font-size: 2rem; font-weight: 800; color: #111827; margin-bottom: 4px;">${digest.reviews.total}</div>
+      ${digest.reviews.avg_rating !== null ? `<div style="font-size: 0.8rem; color: #6B7280;">Avg rating: <strong style="color: #111827;">${digest.reviews.avg_rating}&starf;</strong></div>` : `<div style="font-size: 0.8rem; color: #9CA3AF;">no reviews this week</div>`}
+    </div>
+
+    <div style="background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 12px; padding: 20px;">
+      <div style="font-size: 0.75rem; font-weight: 600; color: #166534; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Positive</div>
+      <div style="font-size: 2rem; font-weight: 800; color: #166534; margin-bottom: 4px;">${digest.mentions.positive_pct}%</div>
+      <div style="font-size: 0.8rem; color: #4D7C0F;">${digest.mentions.positive} mentions</div>
+    </div>
+
+    <div style="background: #FFF1F2; border: 1px solid #FECDD3; border-radius: 12px; padding: 20px;">
+      <div style="font-size: 0.75rem; font-weight: 600; color: #9F1239; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Negative</div>
+      <div style="font-size: 2rem; font-weight: 800; color: #9F1239; margin-bottom: 4px;">${digest.mentions.negative_pct}%</div>
+      <div style="font-size: 0.8rem; color: #BE123C;">${digest.mentions.negative} mentions</div>
+    </div>
+
+    <div style="background: ${digest.alerts_fired > 0 ? '#FFF7ED' : 'white'}; border: 1px solid ${digest.alerts_fired > 0 ? '#FED7AA' : '#E5E7EB'}; border-radius: 12px; padding: 20px;">
+      <div style="font-size: 0.75rem; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Alerts Fired</div>
+      <div style="font-size: 2rem; font-weight: 800; color: ${digest.alerts_fired > 0 ? '#C2410C' : '#111827'}; margin-bottom: 4px;">${digest.alerts_fired}</div>
+      <a href="/projects" style="font-size: 0.8rem; color: #2563EB; text-decoration: none;">View rules &rarr;</a>
+    </div>
+  </div>
+
+  <!-- Two-column layout -->
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+
+    <!-- Daily Trend Chart (bar) -->
+    <div style="background: white; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px;">
+      <h2 style="font-size: 0.9rem; font-weight: 700; color: #111827; margin-bottom: 16px;">Daily Mention Volume</h2>
+      ${digest.daily_trend.length === 0
+        ? `<p style="color: #9CA3AF; font-size: 0.875rem; text-align: center; padding: 24px;">No data for this period.</p>`
+        : `<div style="display: flex; gap: 4px; align-items: flex-end; height: 100px;">
+          ${digest.daily_trend.map(d => `
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;" title="${d.date}: ${d.mentions} mentions">
+              <div style="width: 100%; background: #2563EB; border-radius: 2px 2px 0 0; height: ${Math.max(4, Math.round((d.mentions / maxMentions) * 90))}px;"></div>
+              <div style="font-size: 0.55rem; color: #9CA3AF; writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; max-height: 30px; overflow: hidden;">${d.date.slice(5)}</div>
+            </div>
+          `).join('')}
+        </div>`
+      }
+    </div>
+
+    <!-- Platforms breakdown -->
+    <div style="background: white; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px;">
+      <h2 style="font-size: 0.9rem; font-weight: 700; color: #111827; margin-bottom: 16px;">Platform Breakdown</h2>
+      ${digest.top_platforms.length === 0
+        ? `<p style="color: #9CA3AF; font-size: 0.875rem; text-align: center; padding: 24px;">No data for this period.</p>`
+        : `<div style="display: flex; flex-direction: column; gap: 10px;">
+          ${digest.top_platforms.map(p => `
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="font-size: 0.875rem; font-weight: 600; color: #374151; min-width: 80px; text-transform: capitalize;">${p.platform}</div>
+            <div style="flex: 1; background: ${p.sentiment === 'positive' ? '#10B981' : p.sentiment === 'negative' ? '#EF4444' : '#6B7280'}; border-radius: 4px; height: 8px;"></div>
+            <div style="font-size: 0.875rem; font-weight: 700; color: #111827; min-width: 40px; text-align: right;">${p.mentions}</div>
+          </div>
+          `).join('')}
+        </div>`
+      }
+    </div>
+  </div>
+
+  <!-- Two-column layout: top mentions and top bad reviews -->
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+
+    <div style="background: white; border: 1px solid #E5E7EB; border-radius: 12px; overflow: hidden;">
+      <div style="padding: 16px 20px; border-bottom: 1px solid #E5E7EB; display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="font-size: 0.9rem; font-weight: 700; color: #111827;">Top Engaged Mentions</h2>
+        <a href="/mentions" style="font-size: 0.8rem; color: #2563EB; text-decoration: none;">See all &rarr;</a>
+      </div>
+      ${digest.top_mentions.length === 0
+        ? `<p style="color: #9CA3AF; font-size: 0.875rem; text-align: center; padding: 32px;">No mentions this week.</p>`
+        : digest.top_mentions.map(m => `
+        <div style="padding: 14px 20px; border-bottom: 1px solid #F3F4F6;">
+          <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 4px;">
+            ${m.sentiment_label ? `<span style="font-size: 0.7rem; padding: 1px 6px; border-radius: 20px; font-weight: 600; background: ${m.sentiment_label === 'positive' ? '#D1FAE5' : m.sentiment_label === 'negative' ? '#FEE2E2' : '#F3F4F6'}; color: ${m.sentiment_label === 'positive' ? '#065F46' : m.sentiment_label === 'negative' ? '#991B1B' : '#4B5563'};">${m.sentiment_label}</span>` : ''}
+            <span style="font-size: 0.75rem; color: #9CA3AF;">${(m.engagement_likes || 0) + (m.engagement_comments || 0)} engagements</span>
+          </div>
+          <p style="font-size: 0.8rem; color: #374151; margin: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">${(m.content || '').slice(0, 200)}${(m.content || '').length > 200 ? '&hellip;' : ''}</p>
+          ${m.url ? `<a href="${m.url}" target="_blank" rel="noopener" style="font-size: 0.75rem; color: #2563EB; text-decoration: none; display: inline-block; margin-top: 4px;">View post &rarr;</a>` : ''}
+        </div>
+        `).join('')
+      }
+    </div>
+
+    <div style="background: white; border: 1px solid #E5E7EB; border-radius: 12px; overflow: hidden;">
+      <div style="padding: 16px 20px; border-bottom: 1px solid #E5E7EB; display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="font-size: 0.9rem; font-weight: 700; color: #111827;">Low-Rated Reviews This Week</h2>
+        <a href="/reviews?rating=1" style="font-size: 0.8rem; color: #2563EB; text-decoration: none;">See all &rarr;</a>
+      </div>
+      ${digest.top_negative_reviews.length === 0
+        ? `<p style="font-size: 0.875rem; text-align: center; padding: 32px; color: #059669;">&#10003; No low-rated reviews this week!</p>`
+        : digest.top_negative_reviews.map(r => `
+        <div style="padding: 14px 20px; border-bottom: 1px solid #F3F4F6;">
+          <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 4px;">
+            <span style="color: #DC2626; font-size: 0.875rem; font-weight: 700;">${'★'.repeat(r.rating || 1)}${'☆'.repeat(5 - (r.rating || 1))}</span>
+            <span style="font-size: 0.75rem; color: #9CA3AF; text-transform: capitalize;">${r.platform_name || ''}</span>
+          </div>
+          ${r.title ? `<div style="font-size: 0.8rem; font-weight: 600; color: #374151; margin-bottom: 2px;">${r.title}</div>` : ''}
+          <p style="font-size: 0.8rem; color: #6B7280; margin: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">${(r.content || '').slice(0, 200)}${(r.content || '').length > 200 ? '&hellip;' : ''}</p>
+        </div>
+        `).join('')
+      }
+    </div>
+  </div>
+</div>
+
+` }) %>

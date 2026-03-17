@@ -263,4 +263,40 @@ function runMigrations() {
   } catch {
     // Column already exists
   }
+
+  // ── Feature: Mention bookmarking / response inbox ──────────────────────────
+  try {
+    db.exec('ALTER TABLE mentions ADD COLUMN bookmarked INTEGER NOT NULL DEFAULT 0');
+  } catch { /* already exists */ }
+  try {
+    db.exec('ALTER TABLE mentions ADD COLUMN action_required INTEGER NOT NULL DEFAULT 0');
+  } catch { /* already exists */ }
+  try {
+    db.exec('ALTER TABLE mentions ADD COLUMN internal_notes TEXT');
+  } catch { /* already exists */ }
+  try {
+    db.exec("ALTER TABLE mentions ADD COLUMN action_status TEXT NOT NULL DEFAULT 'open'");
+  } catch { /* already exists */ }
+
+  // ── Feature: Webhook notifications on alert rules ─────────────────────────
+  try {
+    db.exec('ALTER TABLE alert_rules ADD COLUMN webhook_url TEXT');
+  } catch { /* already exists */ }
+  try {
+    db.exec('ALTER TABLE alert_rules ADD COLUMN webhook_secret TEXT');
+  } catch { /* already exists */ }
+
+  // ── Feature: Competitor/entity custom search override ─────────────────────
+  // (entities table already exists from earlier migration; no new columns needed)
+
+  // ── Feature: Digest report — saved snapshots (optional cache) ─────────────
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS report_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      period_start TEXT NOT NULL,
+      period_end TEXT NOT NULL,
+      data_json TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`);
+  } catch { /* already exists */ }
 }
