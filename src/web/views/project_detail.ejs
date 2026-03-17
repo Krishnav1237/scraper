@@ -1,0 +1,228 @@
+<%- include('layout', { body: `
+
+<div class="page-header" style="height: 80px; background: white; border-bottom: 1px solid #E5E7EB; padding: 0 32px; display: flex; align-items: center; justify-content: space-between;">
+  <div style="display: flex; align-items: center; gap: 12px;">
+    <a href="/projects" style="color: #6B7280; text-decoration: none; font-size: 0.875rem;">← Projects</a>
+    <span style="color: #D1D5DB;">/</span>
+    <h1 style="font-size: 1.25rem; font-weight: 700; color: #111827;">${project.name}</h1>
+  </div>
+  <a href="/mentions?search=${JSON.parse(project.search_terms || '[]').join(',')}" style="font-size: 0.875rem; color: #2563EB; text-decoration: none; font-weight: 500;">View Mentions →</a>
+</div>
+
+<div style="padding: 32px; display: flex; flex-direction: column; gap: 32px;">
+
+  ${error ? `<div style="padding: 12px 16px; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 8px; color: #B91C1C; font-size: 0.875rem;">${error}</div>` : ''}
+  ${success ? `<div style="padding: 12px 16px; background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 8px; color: #166534; font-size: 0.875rem;">${success}</div>` : ''}
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start;">
+
+    <!-- Edit Project Form -->
+    <div class="card" style="padding: 24px;">
+      <h3 style="font-size: 1rem; font-weight: 600; color: #111827; margin-bottom: 20px;">Project Settings</h3>
+      <form method="POST" action="/projects/${project.id}/update" style="display: flex; flex-direction: column; gap: 14px;">
+        <div>
+          <label style="font-size: 0.8rem; font-weight: 500; color: #374151; display: block; margin-bottom: 5px;">Project Name <span style="color: #EF4444;">*</span></label>
+          <input type="text" name="name" required value="${project.name}" style="width: 100%; height: 38px; padding: 0 12px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.875rem; box-sizing: border-box;">
+        </div>
+        <div>
+          <label style="font-size: 0.8rem; font-weight: 500; color: #374151; display: block; margin-bottom: 5px;">Description</label>
+          <textarea name="description" rows="2" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.875rem; resize: vertical; box-sizing: border-box;">${project.description || ''}</textarea>
+        </div>
+        <div>
+          <label style="font-size: 0.8rem; font-weight: 500; color: #374151; display: block; margin-bottom: 5px;">Search Terms</label>
+          <input type="text" name="search_terms" value="${JSON.parse(project.search_terms || '[]').join(', ')}" style="width: 100%; height: 38px; padding: 0 12px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.875rem; box-sizing: border-box;">
+        </div>
+        <div>
+          <label style="font-size: 0.8rem; font-weight: 500; color: #374151; display: block; margin-bottom: 5px;">Required Terms</label>
+          <input type="text" name="required_terms" value="${JSON.parse(project.required_terms || '[]').join(', ')}" style="width: 100%; height: 38px; padding: 0 12px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.875rem; box-sizing: border-box;">
+        </div>
+        <div>
+          <label style="font-size: 0.8rem; font-weight: 500; color: #374151; display: block; margin-bottom: 5px;">Monitor Subreddits</label>
+          <input type="text" name="monitor_subreddits" value="${JSON.parse(project.monitor_subreddits || '[]').join(', ')}" style="width: 100%; height: 38px; padding: 0 12px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.875rem; box-sizing: border-box;">
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div>
+            <label style="font-size: 0.8rem; font-weight: 500; color: #374151; display: block; margin-bottom: 5px;">Play Store App ID</label>
+            <input type="text" name="playstore_app_id" value="${project.playstore_app_id || ''}" style="width: 100%; height: 38px; padding: 0 12px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.875rem; box-sizing: border-box;">
+          </div>
+          <div>
+            <label style="font-size: 0.8rem; font-weight: 500; color: #374151; display: block; margin-bottom: 5px;">App Store App ID</label>
+            <input type="text" name="appstore_app_id" value="${project.appstore_app_id || ''}" style="width: 100%; height: 38px; padding: 0 12px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.875rem; box-sizing: border-box;">
+          </div>
+        </div>
+        <div style="display: flex; gap: 16px;">
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: #374151; cursor: pointer;">
+            <input type="checkbox" name="filter_strict" ${project.filter_strict ? 'checked' : ''} style="cursor: pointer;">
+            Strict filter
+          </label>
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: #374151; cursor: pointer;">
+            <input type="checkbox" name="filter_balanced" ${project.filter_balanced ? 'checked' : ''} style="cursor: pointer;">
+            Balanced filter
+          </label>
+        </div>
+        <button type="submit" style="height: 40px; background: #2563EB; color: white; border: none; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer;">Save Changes</button>
+      </form>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 24px;">
+
+      <!-- Keyword Groups -->
+      <div class="card" style="padding: 24px;">
+        <h3 style="font-size: 1rem; font-weight: 600; color: #111827; margin-bottom: 16px;">Keyword Groups <span style="font-size: 0.8rem; color: #6B7280; font-weight: 400;">(${keywordGroups.length})</span></h3>
+        ${keywordGroups.length > 0 ? `
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+            ${keywordGroups.map(kg => `
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: #F9FAFB; border-radius: 6px; border: 1px solid #E5E7EB;">
+                <div>
+                  <div style="font-size: 0.875rem; font-weight: 500; color: #111827;">${kg.name}</div>
+                  <div style="font-size: 0.75rem; color: #6B7280; margin-top: 2px;">${JSON.parse(kg.keywords || '[]').join(', ') || 'No keywords'}</div>
+                </div>
+                <form method="POST" action="/keyword-groups/${kg.id}/delete">
+                  <button type="submit" title="Delete" style="background: none; border: none; cursor: pointer; color: #9CA3AF; font-size: 1.1rem;" onclick="return confirm('Delete this keyword group?')">×</button>
+                </form>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+        <details style="margin-top: ${keywordGroups.length > 0 ? '0' : '0'};">
+          <summary style="font-size: 0.8rem; font-weight: 500; color: #2563EB; cursor: pointer; list-style: none; padding: 6px 0;">+ Add Keyword Group</summary>
+          <form method="POST" action="/projects/${project.id}/keyword-groups" style="margin-top: 12px; display: flex; flex-direction: column; gap: 10px;">
+            <input type="text" name="name" required placeholder="Group name" style="height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.875rem;">
+            <input type="text" name="keywords" placeholder="keyword1, keyword2, keyword3" style="height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.875rem;">
+            <input type="text" name="description" placeholder="Description (optional)" style="height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.875rem;">
+            <button type="submit" style="height: 36px; background: #2563EB; color: white; border: none; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer;">Add Group</button>
+          </form>
+        </details>
+      </div>
+
+      <!-- Entities (Competitors) -->
+      <div class="card" style="padding: 24px;">
+        <h3 style="font-size: 1rem; font-weight: 600; color: #111827; margin-bottom: 16px;">Tracked Entities <span style="font-size: 0.8rem; color: #6B7280; font-weight: 400;">(${entities.length})</span></h3>
+        ${entities.length > 0 ? `
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+            ${entities.map(e => `
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: #F9FAFB; border-radius: 6px; border: 1px solid #E5E7EB;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: ${e.color};"></span>
+                  <div>
+                    <div style="font-size: 0.875rem; font-weight: 500; color: #111827;">${e.name} <span style="font-size: 0.7rem; color: #6B7280; background: #F3F4F6; padding: 2px 6px; border-radius: 4px;">${e.type}</span></div>
+                    <div style="font-size: 0.75rem; color: #6B7280; margin-top: 2px;">${JSON.parse(e.search_terms || '[]').join(', ') || 'No terms'}</div>
+                  </div>
+                </div>
+                <form method="POST" action="/entities/${e.id}/delete">
+                  <button type="submit" title="Delete" style="background: none; border: none; cursor: pointer; color: #9CA3AF; font-size: 1.1rem;" onclick="return confirm('Delete this entity?')">×</button>
+                </form>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+        <details>
+          <summary style="font-size: 0.8rem; font-weight: 500; color: #2563EB; cursor: pointer; list-style: none; padding: 6px 0;">+ Add Entity</summary>
+          <form method="POST" action="/projects/${project.id}/entities" style="margin-top: 12px; display: flex; flex-direction: column; gap: 10px;">
+            <input type="text" name="name" required placeholder="Entity name (e.g. Competitor X)" style="height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.875rem;">
+            <input type="text" name="search_terms" placeholder="competitorx, competitorx app" style="height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.875rem;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <select name="type" style="height: 36px; padding: 0 10px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.875rem; background: white;">
+                <option value="primary">Primary</option>
+                <option value="competitor" selected>Competitor</option>
+                <option value="peer">Peer</option>
+              </select>
+              <input type="color" name="color" value="#6366F1" title="Display color" style="height: 36px; padding: 2px; border-radius: 6px; border: 1px solid #D1D5DB; background: white; cursor: pointer;">
+            </div>
+            <button type="submit" style="height: 36px; background: #2563EB; color: white; border: none; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer;">Add Entity</button>
+          </form>
+        </details>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Alert Rules -->
+  <div class="card" style="padding: 24px;">
+    <h3 style="font-size: 1rem; font-weight: 600; color: #111827; margin-bottom: 16px;">Alert Rules</h3>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start;">
+      <div>
+        ${alertRules.length === 0 ? `
+          <p style="color: #9CA3AF; font-size: 0.875rem;">No alert rules yet. Add one to get notified of spikes or sentiment shifts.</p>
+        ` : `
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            ${alertRules.map(r => `
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: ${r.enabled ? '#FFFBEB' : '#F9FAFB'}; border: 1px solid ${r.enabled ? '#FDE68A' : '#E5E7EB'}; border-radius: 8px;">
+                <div>
+                  <div style="font-size: 0.875rem; font-weight: 600; color: #111827;">${r.name}</div>
+                  <div style="font-size: 0.75rem; color: #6B7280; margin-top: 2px;">
+                    ${r.type === 'mention_spike' ? '📈' : '😟'} ${r.type === 'mention_spike' ? 'Spike' : 'Negative sentiment'} ≥ ${r.threshold}${r.type === 'negative_sentiment' ? '%' : ''} in ${r.window_hours}h
+                  </div>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <form method="POST" action="/alerts/${r.id}/toggle">
+                    <button type="submit" style="font-size: 0.75rem; padding: 4px 10px; border-radius: 5px; border: 1px solid #D1D5DB; background: white; cursor: pointer; color: ${r.enabled ? '#059669' : '#9CA3AF'};">
+                      ${r.enabled ? 'Enabled' : 'Disabled'}
+                    </button>
+                  </form>
+                  <form method="POST" action="/alerts/${r.id}/delete" onsubmit="return confirm('Delete this alert rule?')">
+                    <button type="submit" style="font-size: 0.75rem; padding: 4px 10px; border-radius: 5px; border: 1px solid #FECACA; background: #FEF2F2; cursor: pointer; color: #DC2626;">Delete</button>
+                  </form>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `}
+      </div>
+      <div>
+        <h4 style="font-size: 0.875rem; font-weight: 600; color: #374151; margin-bottom: 12px;">Add Alert Rule</h4>
+        <form method="POST" action="/projects/${project.id}/alerts" style="display: flex; flex-direction: column; gap: 10px;">
+          <input type="text" name="name" required placeholder="Rule name" style="height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.875rem;">
+          <select name="type" required style="height: 36px; padding: 0 10px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.875rem; background: white;">
+            <option value="mention_spike">📈 Mention spike (count ≥ threshold)</option>
+            <option value="negative_sentiment">😟 Negative sentiment (% ≥ threshold)</option>
+          </select>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div>
+              <label style="font-size: 0.75rem; color: #6B7280; display: block; margin-bottom: 4px;">Threshold</label>
+              <input type="number" name="threshold" required placeholder="50" min="1" step="0.1" style="width: 100%; height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.875rem; box-sizing: border-box;">
+            </div>
+            <div>
+              <label style="font-size: 0.75rem; color: #6B7280; display: block; margin-bottom: 4px;">Window (hours)</label>
+              <input type="number" name="window_hours" placeholder="24" min="1" max="720" style="width: 100%; height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.875rem; box-sizing: border-box;">
+            </div>
+          </div>
+          <button type="submit" style="height: 36px; background: #2563EB; color: white; border: none; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer;">Add Rule</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Alert Events -->
+  ${alertEvents.length > 0 ? `
+  <div class="card" style="padding: 24px;">
+    <h3 style="font-size: 1rem; font-weight: 600; color: #111827; margin-bottom: 16px;">Alert History</h3>
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Rule</th>
+            <th>Type</th>
+            <th>Value</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${alertEvents.map(ae => `
+            <tr>
+              <td class="text-xs text-subtle">${new Date(ae.triggered_at || '').toLocaleString()}</td>
+              <td class="font-medium">${ae.rule_name || 'Unknown'}</td>
+              <td><span class="badge badge-neu">${ae.rule_type || ''}</span></td>
+              <td class="text-xs font-bold">${ae.value !== null ? ae.value?.toFixed(1) : '-'}</td>
+              <td class="text-xs text-subtle">${ae.message || ''}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  ` : ''}
+
+</div>
+` }) %>

@@ -381,3 +381,371 @@ export function getRecentExternalIds(platform: PlatformName, limit = 1000): stri
 
   return rows.map(row => row.external_id);
 }
+
+// ============================================================================
+// PROJECTS
+// ============================================================================
+
+export interface Project {
+  id?: number;
+  name: string;
+  description: string | null;
+  search_terms: string;       // JSON array string
+  required_terms: string;     // JSON array string
+  filter_strict: number;
+  filter_balanced: number;
+  monitor_subreddits: string; // JSON array string
+  playstore_app_id: string;
+  appstore_app_id: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export function getProjects(): Project[] {
+  return db.prepare('SELECT * FROM projects ORDER BY id ASC').all() as Project[];
+}
+
+export function getProjectById(id: number): Project | null {
+  return db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as Project | null;
+}
+
+export function createProject(data: Omit<Project, 'id' | 'created_at' | 'updated_at'>): Project {
+  const result = db.prepare(`
+    INSERT INTO projects (name, description, search_terms, required_terms, filter_strict, filter_balanced,
+      monitor_subreddits, playstore_app_id, appstore_app_id)
+    VALUES (@name, @description, @search_terms, @required_terms, @filter_strict, @filter_balanced,
+      @monitor_subreddits, @playstore_app_id, @appstore_app_id)
+  `).run(data);
+  return getProjectById(result.lastInsertRowid as number)!;
+}
+
+export function updateProject(id: number, data: Partial<Omit<Project, 'id' | 'created_at' | 'updated_at'>>): Project | null {
+  const existing = getProjectById(id);
+  if (!existing) return null;
+  const merged = { ...existing, ...data, updated_at: new Date().toISOString() };
+  db.prepare(`
+    UPDATE projects SET name=@name, description=@description, search_terms=@search_terms,
+      required_terms=@required_terms, filter_strict=@filter_strict, filter_balanced=@filter_balanced,
+      monitor_subreddits=@monitor_subreddits, playstore_app_id=@playstore_app_id,
+      appstore_app_id=@appstore_app_id, updated_at=@updated_at
+    WHERE id=@id
+  `).run({ ...merged, id });
+  return getProjectById(id);
+}
+
+export function deleteProject(id: number): boolean {
+  if (id === 1) return false; // Protect default project
+  const result = db.prepare('DELETE FROM projects WHERE id = ?').run(id);
+  return result.changes > 0;
+}
+
+// ============================================================================
+// KEYWORD GROUPS
+// ============================================================================
+
+export interface KeywordGroup {
+  id?: number;
+  project_id: number;
+  name: string;
+  keywords: string; // JSON array string
+  description: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export function getKeywordGroups(projectId?: number): KeywordGroup[] {
+  if (projectId !== undefined) {
+    return db.prepare('SELECT * FROM keyword_groups WHERE project_id = ? ORDER BY name ASC').all(projectId) as KeywordGroup[];
+  }
+  return db.prepare('SELECT * FROM keyword_groups ORDER BY project_id, name ASC').all() as KeywordGroup[];
+}
+
+export function getKeywordGroupById(id: number): KeywordGroup | null {
+  return db.prepare('SELECT * FROM keyword_groups WHERE id = ?').get(id) as KeywordGroup | null;
+}
+
+export function createKeywordGroup(data: Omit<KeywordGroup, 'id' | 'created_at' | 'updated_at'>): KeywordGroup {
+  const result = db.prepare(`
+    INSERT INTO keyword_groups (project_id, name, keywords, description)
+    VALUES (@project_id, @name, @keywords, @description)
+  `).run(data);
+  return getKeywordGroupById(result.lastInsertRowid as number)!;
+}
+
+export function updateKeywordGroup(id: number, data: Partial<Omit<KeywordGroup, 'id' | 'created_at' | 'updated_at'>>): KeywordGroup | null {
+  const existing = getKeywordGroupById(id);
+  if (!existing) return null;
+  const merged = { ...existing, ...data, updated_at: new Date().toISOString() };
+  db.prepare(`
+    UPDATE keyword_groups SET name=@name, keywords=@keywords, description=@description,
+      project_id=@project_id, updated_at=@updated_at
+    WHERE id=@id
+  `).run({ ...merged, id });
+  return getKeywordGroupById(id);
+}
+
+export function deleteKeywordGroup(id: number): boolean {
+  const result = db.prepare('DELETE FROM keyword_groups WHERE id = ?').run(id);
+  return result.changes > 0;
+}
+
+// ============================================================================
+// ENTITIES (Competitors / Peers)
+// ============================================================================
+
+export interface Entity {
+  id?: number;
+  project_id: number;
+  name: string;
+  search_terms: string; // JSON array string
+  type: 'primary' | 'competitor' | 'peer';
+  color: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export function getEntities(projectId?: number): Entity[] {
+  if (projectId !== undefined) {
+    return db.prepare('SELECT * FROM entities WHERE project_id = ? ORDER BY type, name ASC').all(projectId) as Entity[];
+  }
+  return db.prepare('SELECT * FROM entities ORDER BY project_id, type, name ASC').all() as Entity[];
+}
+
+export function getEntityById(id: number): Entity | null {
+  return db.prepare('SELECT * FROM entities WHERE id = ?').get(id) as Entity | null;
+}
+
+export function createEntity(data: Omit<Entity, 'id' | 'created_at' | 'updated_at'>): Entity {
+  const result = db.prepare(`
+    INSERT INTO entities (project_id, name, search_terms, type, color)
+    VALUES (@project_id, @name, @search_terms, @type, @color)
+  `).run(data);
+  return getEntityById(result.lastInsertRowid as number)!;
+}
+
+export function updateEntity(id: number, data: Partial<Omit<Entity, 'id' | 'created_at' | 'updated_at'>>): Entity | null {
+  const existing = getEntityById(id);
+  if (!existing) return null;
+  const merged = { ...existing, ...data, updated_at: new Date().toISOString() };
+  db.prepare(`
+    UPDATE entities SET name=@name, search_terms=@search_terms, type=@type, color=@color,
+      project_id=@project_id, updated_at=@updated_at
+    WHERE id=@id
+  `).run({ ...merged, id });
+  return getEntityById(id);
+}
+
+export function deleteEntity(id: number): boolean {
+  const result = db.prepare('DELETE FROM entities WHERE id = ?').run(id);
+  return result.changes > 0;
+}
+
+// ============================================================================
+// ALERT RULES
+// ============================================================================
+
+export interface AlertRule {
+  id?: number;
+  project_id: number;
+  name: string;
+  type: 'mention_spike' | 'negative_sentiment';
+  threshold: number;
+  window_hours: number;
+  enabled: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AlertEvent {
+  id?: number;
+  rule_id: number;
+  project_id: number;
+  triggered_at?: string;
+  value: number | null;
+  message: string | null;
+  // Joined fields
+  rule_name?: string;
+  rule_type?: string;
+}
+
+export function getAlertRules(projectId?: number): AlertRule[] {
+  if (projectId !== undefined) {
+    return db.prepare('SELECT * FROM alert_rules WHERE project_id = ? ORDER BY name ASC').all(projectId) as AlertRule[];
+  }
+  return db.prepare('SELECT * FROM alert_rules ORDER BY project_id, name ASC').all() as AlertRule[];
+}
+
+export function getAlertRuleById(id: number): AlertRule | null {
+  return db.prepare('SELECT * FROM alert_rules WHERE id = ?').get(id) as AlertRule | null;
+}
+
+export function createAlertRule(data: Omit<AlertRule, 'id' | 'created_at' | 'updated_at'>): AlertRule {
+  const result = db.prepare(`
+    INSERT INTO alert_rules (project_id, name, type, threshold, window_hours, enabled)
+    VALUES (@project_id, @name, @type, @threshold, @window_hours, @enabled)
+  `).run(data);
+  return getAlertRuleById(result.lastInsertRowid as number)!;
+}
+
+export function updateAlertRule(id: number, data: Partial<Omit<AlertRule, 'id' | 'created_at' | 'updated_at'>>): AlertRule | null {
+  const existing = getAlertRuleById(id);
+  if (!existing) return null;
+  const merged = { ...existing, ...data, updated_at: new Date().toISOString() };
+  db.prepare(`
+    UPDATE alert_rules SET name=@name, type=@type, threshold=@threshold, window_hours=@window_hours,
+      enabled=@enabled, project_id=@project_id, updated_at=@updated_at
+    WHERE id=@id
+  `).run({ ...merged, id });
+  return getAlertRuleById(id);
+}
+
+export function deleteAlertRule(id: number): boolean {
+  const result = db.prepare('DELETE FROM alert_rules WHERE id = ?').run(id);
+  return result.changes > 0;
+}
+
+export function getAlertEvents(projectId?: number, limit = 50): AlertEvent[] {
+  if (projectId !== undefined) {
+    return db.prepare(`
+      SELECT ae.*, ar.name as rule_name, ar.type as rule_type
+      FROM alert_events ae
+      JOIN alert_rules ar ON ae.rule_id = ar.id
+      WHERE ae.project_id = ?
+      ORDER BY ae.triggered_at DESC
+      LIMIT ?
+    `).all(projectId, limit) as AlertEvent[];
+  }
+  return db.prepare(`
+    SELECT ae.*, ar.name as rule_name, ar.type as rule_type
+    FROM alert_events ae
+    JOIN alert_rules ar ON ae.rule_id = ar.id
+    ORDER BY ae.triggered_at DESC
+    LIMIT ?
+  `).all(limit) as AlertEvent[];
+}
+
+export function createAlertEvent(data: Omit<AlertEvent, 'id' | 'triggered_at'>): void {
+  db.prepare(`
+    INSERT INTO alert_events (rule_id, project_id, value, message)
+    VALUES (@rule_id, @project_id, @value, @message)
+  `).run(data);
+}
+
+// ============================================================================
+// TRENDS (daily/weekly aggregates)
+// ============================================================================
+
+export interface TrendPoint {
+  date: string;
+  mentions: number;
+  reviews: number;
+  positive: number;
+  negative: number;
+  neutral: number;
+}
+
+export function getTrends(days = 30): TrendPoint[] {
+  const mentionRows = db.prepare(`
+    SELECT
+      date(m.created_at) as date,
+      COUNT(*) as mentions,
+      SUM(CASE WHEN m.sentiment_label = 'positive' THEN 1 ELSE 0 END) as positive,
+      SUM(CASE WHEN m.sentiment_label = 'negative' THEN 1 ELSE 0 END) as negative,
+      SUM(CASE WHEN m.sentiment_label = 'neutral' THEN 1 ELSE 0 END) as neutral
+    FROM mentions m
+    WHERE m.created_at >= date('now', ?)
+    GROUP BY date(m.created_at)
+    ORDER BY date ASC
+  `).all(`-${days} days`) as any[];
+
+  const reviewRows = db.prepare(`
+    SELECT date(r.review_date) as date, COUNT(*) as reviews
+    FROM reviews r
+    WHERE r.review_date >= date('now', ?)
+    GROUP BY date(r.review_date)
+    ORDER BY date ASC
+  `).all(`-${days} days`) as any[];
+
+  // Merge by date
+  const byDate = new Map<string, TrendPoint>();
+  for (const row of mentionRows) {
+    byDate.set(row.date, {
+      date: row.date,
+      mentions: row.mentions,
+      reviews: 0,
+      positive: row.positive,
+      negative: row.negative,
+      neutral: row.neutral,
+    });
+  }
+  for (const row of reviewRows) {
+    if (byDate.has(row.date)) {
+      byDate.get(row.date)!.reviews = row.reviews;
+    } else {
+      byDate.set(row.date, { date: row.date, mentions: 0, reviews: row.reviews, positive: 0, negative: 0, neutral: 0 });
+    }
+  }
+
+  return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// ============================================================================
+// ALERT EVALUATION
+// ============================================================================
+
+export function evaluateAlerts(): void {
+  const rules = getAlertRules().filter(r => r.enabled);
+  for (const rule of rules) {
+    try {
+      if (rule.type === 'mention_spike') {
+        const row = db.prepare(`
+          SELECT COUNT(*) as cnt FROM mentions
+          WHERE created_at >= datetime('now', ?)
+        `).get(`-${rule.window_hours} hours`) as { cnt: number };
+        if (row.cnt >= rule.threshold) {
+          // Only fire if no event in the last window
+          const recent = db.prepare(`
+            SELECT id FROM alert_events
+            WHERE rule_id = ? AND triggered_at >= datetime('now', ?)
+          `).get(rule.id, `-${rule.window_hours} hours`);
+          if (!recent) {
+            createAlertEvent({
+              rule_id: rule.id!,
+              project_id: rule.project_id,
+              value: row.cnt,
+              message: `Mention spike detected: ${row.cnt} mentions in the last ${rule.window_hours}h (threshold: ${rule.threshold})`,
+            });
+          }
+        }
+      } else if (rule.type === 'negative_sentiment') {
+        const row = db.prepare(`
+          SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN sentiment_label = 'negative' THEN 1 ELSE 0 END) as negative
+          FROM mentions
+          WHERE created_at >= datetime('now', ?)
+        `).get(`-${rule.window_hours} hours`) as { total: number; negative: number };
+        if (row.total > 0) {
+          const ratio = (row.negative / row.total) * 100;
+          if (ratio >= rule.threshold) {
+            const recent = db.prepare(`
+              SELECT id FROM alert_events
+              WHERE rule_id = ? AND triggered_at >= datetime('now', ?)
+            `).get(rule.id, `-${rule.window_hours} hours`);
+            if (!recent) {
+              createAlertEvent({
+                rule_id: rule.id!,
+                project_id: rule.project_id,
+                value: ratio,
+                message: `High negative sentiment: ${ratio.toFixed(1)}% of ${row.total} mentions in the last ${rule.window_hours}h (threshold: ${rule.threshold}%)`,
+              });
+            }
+          }
+        }
+      }
+    } catch {
+      // Skip failed rule evaluations
+    }
+  }
+}
+

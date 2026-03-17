@@ -5,9 +5,12 @@
   <div style="flex: 1;">
     <h1 class="page-header-title" style="font-size: 1.5rem; font-weight: 700; color: #111827; letter-spacing: -0.01em;">Overview</h1>
   </div>
-  <div style="font-size: 0.875rem; color: #6B7280; font-weight: 500;">
-    <span style="display: inline-block; width: 8px; height: 8px; background: #10B981; border-radius: 50%; margin-right: 6px;"></span>
-    System Online
+  <div style="display: flex; align-items: center; gap: 16px;">
+    <a href="/projects" style="font-size: 0.875rem; color: #2563EB; font-weight: 500; text-decoration: none;">Manage Projects →</a>
+    <div style="font-size: 0.875rem; color: #6B7280; font-weight: 500;">
+      <span style="display: inline-block; width: 8px; height: 8px; background: #10B981; border-radius: 50%; margin-right: 6px;"></span>
+      System Online
+    </div>
   </div>
 </div>
 
@@ -67,7 +70,7 @@
           <h3 style="font-size: 1rem; font-weight: 600; color: #111827;">Sentiment by Platform</h3>
            <a href="/mentions" style="font-size: 0.75rem; color: #6B7280; font-weight: 500; text-decoration: none;">View All &rarr;</a>
         </div>
-        <div style="flex: 1; overflow: hidden;"> <!-- removed scroll-area -->
+        <div style="flex: 1; overflow: hidden;">
           <table class="modern-table">
             <thead>
               <tr>
@@ -94,7 +97,7 @@
                   </td>
                 </tr>
               `).join('')}
-              ${stats.mentions.length === 0 ? '<tr><td colspan="3" style="text-align: center; padding: 20px; color: #9CA3AF;">No data</td></tr>' : ''}
+              ${stats.mentions.length === 0 ? '<tr><td colspan="3" style="text-align: center; padding: 20px; color: #9CA3AF;">No data yet — configure a project and run a scrape</td></tr>' : ''}
             </tbody>
           </table>
         </div>
@@ -106,7 +109,7 @@
           <h3 style="font-size: 1rem; font-weight: 600; color: #111827;">Store Ratings</h3>
           <a href="/reviews" style="font-size: 0.75rem; color: #6B7280; font-weight: 500; text-decoration: none;">View All &rarr;</a>
         </div>
-        <div style="flex: 1; overflow: hidden;"> <!-- removed scroll-area -->
+        <div style="flex: 1; overflow: hidden;">
           <table class="modern-table">
             <thead>
               <tr>
@@ -138,11 +141,30 @@
                   </td>
                 </tr>
               `).join('')}
-              ${stats.reviews.length === 0 ? '<tr><td colspan="3" style="text-align: center; padding: 20px; color: #9CA3AF;">No data</td></tr>' : ''}
+              ${stats.reviews.length === 0 ? '<tr><td colspan="3" style="text-align: center; padding: 20px; color: #9CA3AF;">No data yet</td></tr>' : ''}
             </tbody>
           </table>
         </div>
       </div>
+
+      <!-- Recent Alerts -->
+      ${alertEvents && alertEvents.length > 0 ? `
+      <div class="stat-card" style="padding: 0; min-height: fit-content;">
+        <div style="padding: 16px 24px; border-bottom: 1px solid #E5E7EB; display: flex; justify-content: space-between; align-items: center; background: #FFF7ED;">
+          <h3 style="font-size: 1rem; font-weight: 600; color: #92400E;">⚠ Recent Alerts</h3>
+          <a href="/projects" style="font-size: 0.75rem; color: #6B7280; font-weight: 500; text-decoration: none;">Manage →</a>
+        </div>
+        <div>
+          ${alertEvents.slice(0, 3).map(ae => `
+            <div style="padding: 12px 24px; border-bottom: 1px solid #F3F4F6;">
+              <div style="font-size: 0.8rem; font-weight: 600; color: #B45309;">${ae.rule_name || 'Alert'}</div>
+              <div style="font-size: 0.75rem; color: #6B7280; margin-top: 2px;">${ae.message || ''}</div>
+              <div style="font-size: 0.7rem; color: #9CA3AF; margin-top: 2px;">${new Date(ae.triggered_at || '').toLocaleString()}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      ` : ''}
 
     </div>
 

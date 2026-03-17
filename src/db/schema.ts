@@ -8,7 +8,7 @@ if (!fs.existsSync(config.paths.data)) {
   fs.mkdirSync(config.paths.data, { recursive: true });
 }
 
-const dbPath = path.join(config.paths.data, 'matiks.db');
+const dbPath = path.join(config.paths.data, config.dbName);
 export const db = new Database(dbPath);
 
 // Enable WAL mode for better concurrent access
@@ -96,8 +96,84 @@ CREATE INDEX IF NOT EXISTS idx_reviews_date ON reviews(review_date);
 CREATE INDEX IF NOT EXISTS idx_reviews_rating ON reviews(rating);
 
 -- ============================================================================
--- Outreach (Compliance-first Reddit helper; no autonomous posting)
+-- Projects (multi-project/workspace support)
 -- ============================================================================
+CREATE TABLE IF NOT EXISTS projects (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  description TEXT,
+  search_terms TEXT DEFAULT '[]',       -- JSON array
+  required_terms TEXT DEFAULT '[]',     -- JSON array
+  filter_strict INTEGER DEFAULT 0,
+  filter_balanced INTEGER DEFAULT 1,
+  monitor_subreddits TEXT DEFAULT '[]', -- JSON array
+  playstore_app_id TEXT DEFAULT '',
+  appstore_app_id TEXT DEFAULT '',
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Default project for backward compatibility
+INSERT OR IGNORE INTO projects (id, name, description)
+  VALUES (1, 'Default Project', 'Automatically created default project');
+
+-- Add project_id to mentions (nullable for backward compat)
+-- ALTER is guarded by migration helper below.
+
+-- Keyword groups per project
+CREATE TABLE IF NOT EXISTS keyword_groups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  keywords TEXT NOT NULL DEFAULT '[]', -- JSON array
+  description TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tracked entities (primary target + competitors/peers) per project
+CREATE TABLE IF NOT EXISTS entities (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  search_terms TEXT NOT NULL DEFAULT '[]', -- JSON array
+  type TEXT NOT NULL DEFAULT 'primary', -- 'primary' | 'competitor' | 'peer'
+  color TEXT DEFAULT '#6366F1',
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Alert rules per project
+CREATE TABLE IF NOT EXISTS alert_rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL, -- 'mention_spike' | 'negative_sentiment'
+  threshold REAL NOT NULL,
+  window_hours INTEGER DEFAULT 24,
+  enabled INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Alert events (triggered alerts)
+CREATE TABLE IF NOT EXISTS alert_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  rule_id INTEGER NOT NULL REFERENCES alert_rules(id) ON DELETE CASCADE,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  triggered_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  value REAL,
+  message TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_keyword_groups_project ON keyword_groups(project_id);
+CREATE INDEX IF NOT EXISTS idx_entities_project ON entities(project_id);
+CREATE INDEX IF NOT EXISTS idx_alert_rules_project ON alert_rules(project_id);
+CREATE INDEX IF NOT EXISTS idx_alert_events_rule ON alert_events(rule_id);
+CREATE INDEX IF NOT EXISTS idx_alert_events_project ON alert_events(project_id);
+CREATE INDEX IF NOT EXISTS idx_alert_events_triggered ON alert_events(triggered_at);
+
+
 
 -- Stores a single Reddit OAuth token set for the local user.
 CREATE TABLE IF NOT EXISTS outreach_reddit_auth (
@@ -167,5 +243,24 @@ CREATE INDEX IF NOT EXISTS idx_outreach_drafts_posted_at ON outreach_drafts(post
 
 export function initializeDatabase() {
   db.exec(schema);
+
+  // Run safe migrations (idempotent)
+  runMigrations();
+
   console.log('✅ Database initialized at:', dbPath);
+}
+
+function runMigrations() {
+  // Add project_id to mentions if not present
+  try {
+    db.exec('ALTER TABLE mentions ADD COLUMN project_id INTEGER REFERENCES projects(id)');
+  } catch {
+    // Column already exists
+  }
+  // Add project_id to reviews if not present
+  try {
+    db.exec('ALTER TABLE reviews ADD COLUMN project_id INTEGER REFERENCES projects(id)');
+  } catch {
+    // Column already exists
+  }
 }
