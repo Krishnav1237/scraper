@@ -133,3 +133,135 @@ describe('Inbox action status validation', () => {
     expect(isValidActionStatus('OPEN')).toBe(false);
   });
 });
+
+// ── 5. Brand Health Score logic ──────────────────────────────────────────────
+// Tests for the pure computation helpers extracted from getBrandScore().
+
+type BrandVerdict =
+  | 'Excellent' | 'Strong' | 'Good' | 'Mixed'
+  | 'Concerning' | 'Critical' | 'Insufficient Data';
+
+function scoreToVerdict(score: number | null): BrandVerdict {
+  if (score === null) return 'Insufficient Data';
+  if (score >= 80) return 'Excellent';
+  if (score >= 65) return 'Strong';
+  if (score >= 50) return 'Good';
+  if (score >= 35) return 'Mixed';
+  if (score >= 20) return 'Concerning';
+  return 'Critical';
+}
+
+function calcMentionScore(positive: number, negative: number, neutral: number): number | null {
+  const total = positive + negative + neutral;
+  if (total === 0) return null;
+  return Math.round((positive * 100 + neutral * 50 + negative * 0) / total);
+}
+
+function calcReviewScore(avgRating: number | null, total: number): number | null {
+  if (total === 0 || avgRating === null) return null;
+  return Math.round(((avgRating - 1) / 4) * 100);
+}
+
+function calcOverallScore(mentionScore: number | null, reviewScore: number | null): number | null {
+  if (mentionScore !== null && reviewScore !== null)
+    return Math.round(0.65 * mentionScore + 0.35 * reviewScore);
+  if (mentionScore !== null) return mentionScore;
+  if (reviewScore !== null) return reviewScore;
+  return null;
+}
+
+describe('Brand Health Score — verdict mapping', () => {
+  it('maps null score to Insufficient Data', () => {
+    expect(scoreToVerdict(null)).toBe('Insufficient Data');
+  });
+
+  it('maps scores to correct verdict buckets', () => {
+    expect(scoreToVerdict(100)).toBe('Excellent');
+    expect(scoreToVerdict(80)).toBe('Excellent');
+    expect(scoreToVerdict(79)).toBe('Strong');
+    expect(scoreToVerdict(65)).toBe('Strong');
+    expect(scoreToVerdict(64)).toBe('Good');
+    expect(scoreToVerdict(50)).toBe('Good');
+    expect(scoreToVerdict(49)).toBe('Mixed');
+    expect(scoreToVerdict(35)).toBe('Mixed');
+    expect(scoreToVerdict(34)).toBe('Concerning');
+    expect(scoreToVerdict(20)).toBe('Concerning');
+    expect(scoreToVerdict(19)).toBe('Critical');
+    expect(scoreToVerdict(0)).toBe('Critical');
+  });
+});
+
+describe('Brand Health Score — mention score calculation', () => {
+  it('returns null when no mentions', () => {
+    expect(calcMentionScore(0, 0, 0)).toBeNull();
+  });
+
+  it('returns 100 for all-positive', () => {
+    expect(calcMentionScore(100, 0, 0)).toBe(100);
+  });
+
+  it('returns 0 for all-negative', () => {
+    expect(calcMentionScore(0, 100, 0)).toBe(0);
+  });
+
+  it('returns 50 for all-neutral', () => {
+    expect(calcMentionScore(0, 0, 100)).toBe(50);
+  });
+
+  it('handles mixed sentiment correctly', () => {
+    // 60 pos, 20 neg, 20 neutral → (60*100 + 20*50 + 20*0) / 100 = 7000/100 = 70
+    expect(calcMentionScore(60, 20, 20)).toBe(70);
+  });
+});
+
+describe('Brand Health Score — review score calculation', () => {
+  it('returns null when no reviews', () => {
+    expect(calcReviewScore(null, 0)).toBeNull();
+  });
+
+  it('converts 5-star to 100', () => {
+    expect(calcReviewScore(5, 10)).toBe(100);
+  });
+
+  it('converts 1-star to 0', () => {
+    expect(calcReviewScore(1, 10)).toBe(0);
+  });
+
+  it('converts 3-star to 50', () => {
+    expect(calcReviewScore(3, 10)).toBe(50);
+  });
+
+  it('converts 4.5-star correctly', () => {
+    // (4.5 - 1) / 4 * 100 = 87.5 → rounds to 88
+    expect(calcReviewScore(4.5, 5)).toBe(88);
+  });
+});
+
+describe('Brand Health Score — combined score weighting', () => {
+  it('uses only mention score when no reviews', () => {
+    expect(calcOverallScore(70, null)).toBe(70);
+  });
+
+  it('uses only review score when no mentions', () => {
+    expect(calcOverallScore(null, 80)).toBe(80);
+  });
+
+  it('returns null when both are null', () => {
+    expect(calcOverallScore(null, null)).toBeNull();
+  });
+
+  it('combines with 65/35 weighting', () => {
+    // 0.65 * 80 + 0.35 * 60 = 52 + 21 = 73
+    expect(calcOverallScore(80, 60)).toBe(73);
+  });
+
+  it('returns Excellent verdict when both scores are high', () => {
+    const overall = calcOverallScore(90, 85);
+    expect(scoreToVerdict(overall)).toBe('Excellent');
+  });
+
+  it('returns Mixed verdict for mediocre scores', () => {
+    const overall = calcOverallScore(40, 45);
+    expect(scoreToVerdict(overall)).toBe('Mixed');
+  });
+});

@@ -183,6 +183,53 @@ Rolling-window sentiment percentages and daily trend.
 }
 ```
 
+#### `GET /api/brand/score?days=30`
+Aggregated brand health score (0–100) with a verdict label and representative testimonials. Inspired by structured AI-verdict patterns: a numeric score makes brand health instantly comparable across time periods and competitors.
+
+| Field | Type | Description |
+|---|---|---|
+| `overallScore` | `number \| null` | 0–100 composite score; `null` if no data |
+| `verdict` | `string` | One of: `Excellent`, `Strong`, `Good`, `Mixed`, `Concerning`, `Critical`, `Insufficient Data` |
+| `verdictSummary` | `string` | Plain-language explanation of the verdict |
+| `mentionScore` | `number \| null` | 0–100 score from mention sentiment alone |
+| `reviewScore` | `number \| null` | 0–100 score from app-store ratings alone (1★→0, 5★→100) |
+| `positivePct` | `number` | % of mentions that are positive |
+| `negativePct` | `number` | % of mentions that are negative |
+| `neutralPct` | `number` | % of mentions that are neutral |
+| `avgReviewRating` | `number \| null` | Average star rating across Play Store + App Store |
+| `totalDataPoints` | `number` | Total mentions + reviews analysed |
+| `windowDays` | `number` | Rolling window used |
+| `testimonials` | `array` | Top positive and negative quotes from the dataset |
+| `analyzedAt` | `string` | ISO 8601 timestamp |
+
+**Score formula:**
+- `mentionScore` = `(positive × 100 + neutral × 50 + negative × 0) / total`
+- `reviewScore` = `((avgRating − 1) / 4) × 100`
+- `overallScore` = `0.65 × mentionScore + 0.35 × reviewScore` (or whichever is available)
+
+**Verdict thresholds:** ≥80 Excellent · ≥65 Strong · ≥50 Good · ≥35 Mixed · ≥20 Concerning · <20 Critical
+
+```json
+{
+  "overallScore": 74,
+  "verdict": "Strong",
+  "verdictSummary": "Brand sentiment is largely positive (68% positive, 12% negative). Minor concerns exist but the overall reception is good.",
+  "mentionScore": 78,
+  "reviewScore": 65,
+  "positivePct": 68,
+  "negativePct": 12,
+  "neutralPct": 20,
+  "avgReviewRating": 4.2,
+  "totalDataPoints": 520,
+  "windowDays": 30,
+  "testimonials": [
+    { "text": "Exactly what I needed, works perfectly.", "sentiment": "positive", "source": "reddit", "url": "https://reddit.com/r/..." },
+    { "text": "Keeps crashing on the latest update.", "sentiment": "negative", "source": "playstore", "url": null }
+  ],
+  "analyzedAt": "2026-03-17T20:30:00.000Z"
+}
+```
+
 ---
 
 ### 3.3 Response Inbox

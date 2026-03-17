@@ -1294,3 +1294,167 @@ export function getWeeklyDigest(weeksAgo = 0): WeeklyDigest {
     top_platforms: topPlatforms,
   };
 }
+
+// ============================================================================
+// BRAND HEALTH SCORE
+// Inspired by CrowdLens — produces an overall 0-100 score and verdict label
+// aggregated from mention sentiment + app store ratings over a rolling window.
+// ============================================================================
+
+export interface BrandTestimonial {
+  text: string;
+  sentiment: 'positive' | 'negative';
+  source: string;
+  url: string | null;
+}
+
+export interface BrandScore {
+  overallScore: number | null;
+  verdict: 'Excellent' | 'Strong' | 'Good' | 'Mixed' | 'Concerning' | 'Critical' | 'Insufficient Data';
+  verdictSummary: string;
+  mentionScore: number | null;
+  reviewScore: number | null;
+  positivePct: number;
+  negativePct: number;
+  neutralPct: number;
+  avgReviewRating: number | null;
+  totalDataPoints: number;
+  windowDays: number;
+  testimonials: BrandTestimonial[];
+  analyzedAt: string;
+}
+
+function scoreToVerdict(score: number | null): BrandScore['verdict'] {
+  if (score === null) return 'Insufficient Data';
+  if (score >= 80) return 'Excellent';
+  if (score >= 65) return 'Strong';
+  if (score >= 50) return 'Good';
+  if (score >= 35) return 'Mixed';
+  if (score >= 20) return 'Concerning';
+  return 'Critical';
+}
+
+function verdictSummaryFor(verdict: BrandScore['verdict'], positivePct: number, negativePct: number, avgRating: number | null): string {
+  const ratingText = avgRating !== null ? ` App store ratings average ${avgRating.toFixed(1)}/5.` : '';
+  switch (verdict) {
+    case 'Excellent':   return `Brand sentiment is overwhelmingly positive (${positivePct}% positive).${ratingText} The brand enjoys strong community trust.`;
+    case 'Strong':      return `Brand sentiment is largely positive (${positivePct}% positive, ${negativePct}% negative).${ratingText} Minor concerns exist but the overall reception is good.`;
+    case 'Good':        return `Brand sentiment is generally positive (${positivePct}% positive, ${negativePct}% negative).${ratingText} There is room to address recurring criticisms.`;
+    case 'Mixed':       return `Brand sentiment is divided (${positivePct}% positive, ${negativePct}% negative).${ratingText} Significant positive and negative voices are both present.`;
+    case 'Concerning':  return `Negative sentiment is elevated (${negativePct}% negative, ${positivePct}% positive).${ratingText} Brand health requires attention.`;
+    case 'Critical':    return `Brand sentiment is predominantly negative (${negativePct}% negative, ${positivePct}% positive).${ratingText} Immediate intervention is recommended.`;
+    case 'Insufficient Data': return 'Not enough data has been collected yet to produce a reliable brand score. Run a few scrape cycles and try again.';
+  }
+}
+
+export function getBrandScore(days = 30): BrandScore {
+  const windowDays = Math.max(1, Math.min(days, 365));
+
+  // --- Mention sentiment aggregates ---
+  const mRow = db.prepare(`
+    SELECT
+      COUNT(*) as total,
+      SUM(CASE WHEN sentiment_label = 'positive' THEN 1 ELSE 0 END) as positive,
+      SUM(CASE WHEN sentiment_label = 'negative' THEN 1 ELSE 0 END) as negative,
+      SUM(CASE WHEN sentiment_label = 'neutral'  THEN 1 ELSE 0 END) as neutral
+    FROM mentions
+    WHERE created_at >= datetime('now', '-' || ? || ' days')
+  `).get(windowDays) as { total: number; positive: number; negative: number; neutral: number };
+
+  // --- Review rating aggregates ---
+  const rRow = db.prepare(`
+    SELECT COUNT(*) as total, AVG(rating) as avg_rating
+    FROM reviews
+    WHERE review_date >= date('now', '-' || ? || ' days')
+  `).get(windowDays) as { total: number; avg_rating: number | null };
+
+  const mTotal = mRow.total || 0;
+  const rTotal = rRow.total || 0;
+  const totalDataPoints = mTotal + rTotal;
+
+  // --- Score components (0–100 each) ---
+  let mentionScore: number | null = null;
+  if (mTotal > 0) {
+    // Weighted: positive=100, neutral=50, negative=0
+    mentionScore = Math.round(
+      ((mRow.positive * 100 + mRow.neutral * 50 + mRow.negative * 0) / mTotal)
+    );
+  }
+
+  let reviewScore: number | null = null;
+  if (rTotal > 0 && rRow.avg_rating !== null) {
+    // Convert 1–5 star rating to 0–100
+    reviewScore = Math.round(((rRow.avg_rating - 1) / 4) * 100);
+  }
+
+  // --- Combined score ---
+  let overallScore: number | null = null;
+  if (mentionScore !== null && reviewScore !== null) {
+    overallScore = Math.round(0.65 * mentionScore + 0.35 * reviewScore);
+  } else if (mentionScore !== null) {
+    overallScore = mentionScore;
+  } else if (reviewScore !== null) {
+    overallScore = reviewScore;
+  }
+
+  // --- Percentages ---
+  const positivePct = mTotal > 0 ? Math.round((mRow.positive / mTotal) * 100) : 0;
+  const negativePct = mTotal > 0 ? Math.round((mRow.negative / mTotal) * 100) : 0;
+  const neutralPct  = mTotal > 0 ? Math.round((mRow.neutral  / mTotal) * 100) : 0;
+
+  // --- Testimonials (top positive + most-engaged negative) ---
+  const positiveMentions = db.prepare(`
+    SELECT m.content, m.url, p.name as platform
+    FROM mentions m
+    JOIN platforms p ON m.platform_id = p.id
+    WHERE m.sentiment_label = 'positive'
+      AND m.created_at >= datetime('now', '-' || ? || ' days')
+      AND m.content IS NOT NULL AND length(m.content) > 30
+    ORDER BY (m.engagement_likes + m.engagement_comments) DESC
+    LIMIT 3
+  `).all(windowDays) as { content: string; url: string | null; platform: string }[];
+
+  const negativeMentions = db.prepare(`
+    SELECT m.content, m.url, p.name as platform
+    FROM mentions m
+    JOIN platforms p ON m.platform_id = p.id
+    WHERE m.sentiment_label = 'negative'
+      AND m.created_at >= datetime('now', '-' || ? || ' days')
+      AND m.content IS NOT NULL AND length(m.content) > 30
+    ORDER BY (m.engagement_likes + m.engagement_comments) DESC
+    LIMIT 2
+  `).all(windowDays) as { content: string; url: string | null; platform: string }[];
+
+  const testimonials: BrandTestimonial[] = [
+    ...positiveMentions.map(m => ({
+      text: m.content.length > 280 ? m.content.slice(0, 277) + '…' : m.content,
+      sentiment: 'positive' as const,
+      source: m.platform,
+      url: m.url,
+    })),
+    ...negativeMentions.map(m => ({
+      text: m.content.length > 280 ? m.content.slice(0, 277) + '…' : m.content,
+      sentiment: 'negative' as const,
+      source: m.platform,
+      url: m.url,
+    })),
+  ];
+
+  const verdict = scoreToVerdict(overallScore);
+
+  return {
+    overallScore,
+    verdict,
+    verdictSummary: verdictSummaryFor(verdict, positivePct, negativePct, rRow.avg_rating !== null ? Math.round(rRow.avg_rating * 10) / 10 : null),
+    mentionScore,
+    reviewScore,
+    positivePct,
+    negativePct,
+    neutralPct,
+    avgReviewRating: rRow.avg_rating !== null ? Math.round(rRow.avg_rating * 10) / 10 : null,
+    totalDataPoints,
+    windowDays,
+    testimonials,
+    analyzedAt: new Date().toISOString(),
+  };
+}

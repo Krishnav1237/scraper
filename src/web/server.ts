@@ -22,6 +22,7 @@ import {
   setMentionBookmark, setMentionActionRequired, setMentionActionStatus, setMentionNotes,
   getEntityComparison,
   getWeeklyDigest,
+  getBrandScore,
 } from '../db/queries.js';
 import { GoogleSheetsService } from '../core/googleSheets.js';
 import { getScheduleInfo } from '../scheduler/jobs.js';
@@ -473,6 +474,14 @@ app.get('/api/sentiment/summary', (req, res) => {
     },
     trend: trends,
   });
+});
+
+// Brand health score — aggregated sentiment + review score (0-100) with verdict label.
+// Inspired by CrowdLens-style structured brand verdicts.
+// Query param: ?days=30 (window, 1-365, default 30)
+app.get('/api/brand/score', (req, res) => {
+  const days = Math.min(parseInt(req.query.days as string) || 30, 365);
+  res.json(getBrandScore(days));
 });
 
 // ============================================================================
