@@ -50,9 +50,17 @@ graph TD
         State -->|Next Start Time| Manager
     end
     
+    subgraph "Outreach Module (v2)"
+        Outreach[Outreach Dashboard] -->|OAuth flow| RedditAPI[Reddit OAuth API]
+        Outreach -->|Drafts / Subreddits| DB
+        Outreach -->|Submit post| RedditOAuth[reddit oauth.reddit.com/api/submit]
+        RedditOAuth -->|Audit log| DB
+    end
+    
     Dashboard -->|Reads| DB
     Dashboard -->|Triggers| Export[Export Service]
     Export -->|Writes| Sheets[Google Sheets API]
+    User -->|Views| Outreach
 ```
 
 ## 2.3 Directory Structure Analysis
@@ -81,8 +89,10 @@ This file is the single source of truth for the application's state.
 ### `src/db/` (Persistence Layer)
 - **`schema.ts`**: Database definitions.
     - **WAL Mode:** Enables Write-Ahead Logging for high concurrency (Dashboards read while Scrapers write).
-    - **Tables:** `mentions`, `reviews`, `scrape_logs`, `scrape_cursors`.
-    - **`queries.ts`**: Data Access Object (DAO) layer using Prepared Statements for security and speed.
+    - **Core tables:** `mentions`, `reviews`, `scrape_logs`, `scrape_cursors`.
+    - **Project tables:** `projects`, `keyword_groups`, `monitored_entities`, `alert_rules`, `alert_events`.
+    - **Outreach tables (v2):** `outreach_reddit_auth`, `outreach_oauth_states`, `outreach_subreddits`, `outreach_drafts`, `outreach_post_attempts`.
+    - **`queries.ts`**: Data Access Object (DAO) layer using prepared statements for security and speed. All outreach CRUD functions, OAuth state management, and post-attempt audit logging are implemented here.
 
 ### `src/core/googleSheets.ts` (Export Layer)
 - **Responsibility:** Handles authentication (JWT) and synchronization with Google Sheets API v4.
@@ -183,13 +193,19 @@ See *Platform Constraints Analysis*.
 - **Legal Barrier:** Violation of Terms of Service without Enterprise API (starting at $42k/mo).
 - **Decision:** Removed from core codebase to ensure 100% stability. Future integration requires Enterprise API keys or 3rd party vendors (BrightData).
 
-## 5.2 Generative AI Integration (Phase 2)
+## 5.2 Completed in v2
+- ✅ **Reddit Outreach Module** — OAuth 2.0 flow, subreddit management, draft posts, post submission with audit trail
+- ✅ **Projects & Alert Rules** — per-project keyword groups, competitor entities, and configurable alert thresholds
+- ✅ **Enhanced API** — `/api/health`, `/api/search`, `/api/sentiment/summary`, `/api/export/all`
+- ✅ **Dashboard Sentiment Health Bar** — at-a-glance positive/negative/neutral indicator
+
+## 5.3 Generative AI Integration (Phase 3)
 Transitioning from deterministic lexicons to probabilistic LLMs.
 - **Advanced Sentiment:** Use OpenAI/Claude API to detect sarcasm.
 - **Aspect-Based Analysis:** "Great UI but bad login" -> `UI: Positive`, `Stability: Negative`.
-- **Auto-Reply Drafts:** Generating context-aware responses for store reviews.
+- **Auto-Reply Drafts:** Generating context-aware responses for store reviews using the existing Outreach draft system.
 
-## 5.3 Distributed Scaling (Phase 3)
+## 5.4 Distributed Scaling (Phase 4)
 Moving beyond the Monolith.
 - **Queue System:** Replace internal scheduler with **Redis + BullMQ**.
     - Allows multiple "Worker Nodes" to scrape in parallel.
@@ -199,4 +215,4 @@ Moving beyond the Monolith.
 ---
 
 # 6. Conclusion
-The Matiks Monitor is built on a foundation of reliability. By combining strict type safety, self-healing automation, and a modular architecture, it provides a stable platform for brand intelligence today, with a clear path to AI-driven insights tomorrow.
+The Social Media Brand Monitor is built on a foundation of reliability. By combining strict type safety, self-healing automation, a modular architecture, and a full Reddit community outreach module, it provides a stable platform for brand intelligence today, with a clear path to AI-driven insights and distributed scaling tomorrow.

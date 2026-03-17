@@ -6,6 +6,13 @@
     <h1 class="page-header-title" style="font-size: 1.5rem; font-weight: 700; color: #111827; letter-spacing: -0.01em;">Overview</h1>
   </div>
   <div style="display: flex; align-items: center; gap: 16px;">
+    <!-- Global Search -->
+    <form method="GET" action="/mentions" style="display: flex; align-items: center; gap: 0;">
+      <div style="position: relative;">
+        <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #9CA3AF; font-size: 0.875rem;">🔍</span>
+        <input type="text" name="search" placeholder="Search all data…" style="height: 36px; padding: 0 12px 0 32px; border-radius: 8px; border: 1px solid #D1D5DB; background: #F9FAFB; color: #374151; font-size: 0.8rem; width: 200px;">
+      </div>
+    </form>
     <a href="/projects" style="font-size: 0.875rem; color: #2563EB; font-weight: 500; text-decoration: none;">Manage Projects →</a>
     <div style="font-size: 0.875rem; color: #6B7280; font-weight: 500;">
       <span style="display: inline-block; width: 8px; height: 8px; background: #10B981; border-radius: 50%; margin-right: 6px;"></span>
@@ -58,7 +65,34 @@
 
   </div>
 
-  <!-- BOTTOM ROW: CONTENT (Fills Remaining Space) -->
+  <!-- SENTIMENT HEALTH BAR -->
+  ${(() => {
+    const allMentions = stats.mentions.reduce((s, p) => { s.pos += (p.positive || 0); s.neg += (p.negative || 0); s.total += (p.total || 0); return s; }, {pos:0,neg:0,total:0});
+    const posP = allMentions.total ? Math.round((allMentions.pos/allMentions.total)*100) : 0;
+    const negP = allMentions.total ? Math.round((allMentions.neg/allMentions.total)*100) : 0;
+    const neuP = 100 - posP - negP;
+    const outreachStats = { drafts: drafts ? drafts.length : 0, posted: drafts ? drafts.filter(d => d.status === 'posted').length : 0 };
+    return `
+  <div style="padding: 0 32px 0 32px; background: white; border-bottom: 1px solid #E5E7EB; display: flex; align-items: center; gap: 32px; height: 48px;">
+    <div style="display: flex; align-items: center; gap: 10px; flex: 1;">
+      <span style="font-size: 0.75rem; font-weight: 600; color: #6B7280; white-space: nowrap;">Sentiment Health</span>
+      <div style="flex: 1; height: 8px; border-radius: 4px; background: #F3F4F6; overflow: hidden; display: flex;">
+        <div style="width: ${posP}%; background: #10B981; transition: width 0.4s;"></div>
+        <div style="width: ${neuP}%; background: #E5E7EB;"></div>
+        <div style="width: ${negP}%; background: #EF4444;"></div>
+      </div>
+      <span style="font-size: 0.7rem; color: #059669; white-space: nowrap;">${posP}% pos</span>
+      <span style="font-size: 0.7rem; color: #DC2626; white-space: nowrap;">${negP}% neg</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px; font-size: 0.75rem; color: #6B7280;">
+      <a href="/outreach" style="text-decoration: none; color: #6B7280; display: flex; align-items: center; gap: 5px;">
+        📣 <span><strong style="color: #111827;">${outreachStats.posted}</strong> posts live · <strong style="color: #111827;">${outreachStats.drafts}</strong> drafts</span>
+      </a>
+      <a href="/api/export/all" style="text-decoration: none; color: #2563EB; font-weight: 500; font-size: 0.75rem;">⬇ Export All</a>
+    </div>
+  </div>
+    `;
+  })()}
   <div class="dashboard-row-content">
     
     <!-- LEFT: ANALYTICS SPLIT (Stacked, Natural Height) -->

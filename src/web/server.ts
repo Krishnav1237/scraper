@@ -25,6 +25,20 @@ import { getRateLimitState } from '../core/rateLimit.js';
 const app = express();
 const appName = config.appName;
 
+// Simple in-memory rate limiter for sensitive endpoints (e.g. OAuth routes)
+const _rlWindows = new Map<string, { count: number; reset: number }>();
+function simpleRateLimit(key: string, maxRequests: number, windowMs: number): boolean {
+  const now = Date.now();
+  const entry = _rlWindows.get(key);
+  if (!entry || now > entry.reset) {
+    _rlWindows.set(key, { count: 1, reset: now + windowMs });
+    return true; // allowed
+  }
+  if (entry.count >= maxRequests) return false; // blocked
+  entry.count++;
+  return true; // allowed
+}
+
 // Configure EJS
 app.set('view engine', 'ejs');
 app.set('views', config.paths.views);
@@ -47,6 +61,7 @@ app.get('/', (req, res) => {
   const recentReviews = getReviews({ limit: 5 });
   const alertEvents = getAlertEvents(undefined, 5);
   const trends = getTrends(7);
+  const drafts = getOutreachDrafts();
   
   res.render('dashboard', {
     appName,
@@ -57,6 +72,7 @@ app.get('/', (req, res) => {
     recentReviews,
     alertEvents,
     trends,
+    drafts,
   });
 });
 
@@ -391,6 +407,68 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+// Health check — minimal liveness probe suitable for uptime monitors
+app.get('/api/health', (req, res) => {
+  const stats = getStats();
+  const totalMentions = (stats.mentions as any[]).reduce((s: number, p: any) => s + (p.total || 0), 0);
+  const totalReviews = (stats.reviews as any[]).reduce((s: number, p: any) => s + (p.total || 0), 0);
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptimeSeconds: Math.round(process.uptime()),
+    data: {
+      totalMentions,
+      totalReviews,
+      last24hMentions: stats.last24h.mentions,
+      last24hReviews: stats.last24h.reviews,
+    },
+  });
+});
+
+// Global search — searches both mentions and reviews simultaneously
+app.get('/api/search', (req, res) => {
+  const q = (req.query.q as string || '').trim();
+  const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+  if (!q) {
+    return res.status(400).json({ error: 'Query parameter "q" is required' });
+  }
+  const mentions = getMentions({ search: q, limit });
+  const reviews = getReviews({ search: q, limit });
+  res.json({
+    query: q,
+    mentions: { count: mentions.length, items: mentions },
+    reviews: { count: reviews.length, items: reviews },
+    total: mentions.length + reviews.length,
+  });
+});
+
+// Sentiment breakdown — positive/negative/neutral percentages for a date window
+app.get('/api/sentiment/summary', (req, res) => {
+  const days = Math.min(parseInt(req.query.days as string) || 30, 365);
+  const trends = getTrends(days);
+  const totals = trends.reduce(
+    (acc, t) => {
+      acc.mentions += t.mentions;
+      acc.positive += t.positive;
+      acc.negative += t.negative;
+      acc.neutral += t.neutral;
+      return acc;
+    },
+    { mentions: 0, positive: 0, negative: 0, neutral: 0 }
+  );
+  const safeTotal = totals.mentions || 1;
+  res.json({
+    windowDays: days,
+    totals,
+    percentages: {
+      positive: parseFloat(((totals.positive / safeTotal) * 100).toFixed(1)),
+      negative: parseFloat(((totals.negative / safeTotal) * 100).toFixed(1)),
+      neutral: parseFloat(((totals.neutral / safeTotal) * 100).toFixed(1)),
+    },
+    trend: trends,
+  });
+});
+
 // ============================================================================
 // EXPORT ENDPOINTS
 // ============================================================================
@@ -490,6 +568,52 @@ app.get('/api/export/reviews.json', (req, res) => {
   const reviews = getReviews(filters);
   res.setHeader('Content-Disposition', 'attachment; filename=reviews.json');
   res.json(reviews);
+});
+
+// Google Sheets export
+app.get('/api/export/all', (req, res) => {
+  const startDate = req.query.startDate as string | undefined;
+  const endDate = req.query.endDate as string | undefined;
+  const mentions = getMentions({ startDate, endDate });
+  const reviews = getReviews({ startDate, endDate });
+
+  const mentionRows = mentions.map(m => [
+    new Date(m.created_at).toISOString().slice(0, 10),
+    'mention',
+    (m as any).platform_name || 'reddit',
+    `"${(m.author || '').replace(/"/g, '""')}"`,
+    `"${(m.content || '').replace(/"/g, '""')}"`,
+    m.url || '',
+    m.engagement_likes,
+    m.engagement_comments,
+    '',
+    '',
+    m.sentiment_label || '',
+  ].join(','));
+
+  const reviewRows = reviews.map(r => [
+    new Date(r.review_date).toISOString().slice(0, 10),
+    'review',
+    (r as any).platform_name || '',
+    `"${(r.author || '').replace(/"/g, '""')}"`,
+    `"${(r.content || '').replace(/"/g, '""')}"`,
+    '',
+    '',
+    '',
+    r.rating,
+    `"${(r.title || '').replace(/"/g, '""')}"`,
+    r.sentiment_label || '',
+  ].join(','));
+
+  const csv = [
+    ['Date', 'Type', 'Platform', 'Author', 'Content', 'URL', 'Likes', 'Comments', 'Rating', 'Title', 'Sentiment'].join(','),
+    ...mentionRows,
+    ...reviewRows,
+  ].join('\n');
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename=all-data.csv');
+  res.send(csv);
 });
 
 // Google Sheets export
@@ -641,6 +765,10 @@ app.get('/outreach', (req, res) => {
 
 // GET /outreach/auth - start Reddit OAuth flow
 app.get('/outreach/auth', (req, res) => {
+  const ip = (req.headers['x-forwarded-for'] as string || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
+  if (!simpleRateLimit(`oauth-init:${ip}`, 10, 60_000)) {
+    return res.status(429).send('Too many requests. Please wait before trying again.');
+  }
   if (!config.reddit.clientId || !config.reddit.clientSecret) {
     return res.redirect('/outreach?error=Reddit+OAuth+credentials+not+configured.+Set+REDDIT_CLIENT_ID+and+REDDIT_CLIENT_SECRET+in+.env');
   }
@@ -658,6 +786,10 @@ app.get('/outreach/auth', (req, res) => {
 
 // GET /outreach/auth/callback - Reddit OAuth callback
 app.get('/outreach/auth/callback', async (req, res) => {
+  const ip = (req.headers['x-forwarded-for'] as string || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
+  if (!simpleRateLimit(`oauth-cb:${ip}`, 10, 60_000)) {
+    return res.status(429).send('Too many requests. Please wait before trying again.');
+  }
   const { code, state, error } = req.query as Record<string, string>;
   if (error) {
     return res.redirect(`/outreach?error=Reddit+access+denied:+${encodeURIComponent(error)}`);
@@ -679,6 +811,10 @@ app.get('/outreach/auth/callback', async (req, res) => {
 
 // POST /outreach/auth/disconnect
 app.post('/outreach/auth/disconnect', (req, res) => {
+  const ip = (req.headers['x-forwarded-for'] as string || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
+  if (!simpleRateLimit(`oauth-dc:${ip}`, 10, 60_000)) {
+    return res.status(429).send('Too many requests. Please wait before trying again.');
+  }
   clearOutreachAuth();
   res.redirect('/outreach?success=Reddit+account+disconnected');
 });
