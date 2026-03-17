@@ -1,4 +1,4 @@
-# Matiks Monitor: Scraping Intelligence & Strategy
+# Social Media Brand Monitor: Scraping Intelligence & Strategy
 > **Document ID:** SCRAPE-INTEL-V1
 > **Scope:** Data Ingestion, Anti-Detection, Cursor Logic
 > **Status:** Active & Verified
@@ -7,7 +7,7 @@
 
 # 1. Introduction
 
-This document details the "Brain" of the data ingestion engine. Unlike simple scripts that blindly fetch web pages, the Matiks Monitor employs **Stateful Incremental Scraping** and **Adversarial Avoidance** techniques to ensure long-term data quality and availability.
+This document details the "Brain" of the data ingestion engine. Unlike simple scripts that blindly fetch web pages, the Social Media Brand Monitor employs **Stateful Incremental Scraping** and **Adversarial Avoidance** techniques to ensure long-term data quality and availability.
 
 ---
 
@@ -60,13 +60,13 @@ When falling back to Browser Scraping (Playwright), we apply `puppeteer-extra-pl
 The Reddit scraper is a hybrid engine designed to balance speed vs reliability.
 
 ### Mode A: JSON API (Speed)
-- **Method:** Appending `.json` to search URLs. e.g. `reddit.com/search.json?q=matiks`.
+- **Method:** Appending `.json` to search URLs, e.g. `reddit.com/search.json?q=yourbrand`.
 - **Pros:** 100x faster, less CPU.
 - **Cons:** Extremely aggressive Rate Limiting (429s).
 - **Implementation:**
     - Uses a **Token Bucket** Rate Limiter.
     - Max 25 requests/min.
-    - Strict Exponential Backoff on 429 (2s -> 4s -> 8s -> 16s).
+    - Strict Exponential Backoff on 429 (2s → 4s → 8s → 16s).
 
 ### Mode B: Headless Browser (Reliability)
 - **Trigger:** If API fails or returns suspicious "0 results".
@@ -75,9 +75,9 @@ The Reddit scraper is a hybrid engine designed to balance speed vs reliability.
 - **Logic:** The scraper scrolls to the bottom, waits for the DOM to mutate (new posts loading), and repeats until the Cursor Date is reached.
 
 ## 4.2 Brand Filtering Rules
-Raw search for "Matiks" is noisy.
-- **Strict Mode:** Only matches exact Brand domain (`matiks.in`).
-- **Balanced Mode (Default):** Matches "Matiks" **IF** context words exist (*app, game, math, play store, ios*). This eliminates false positives like "matiks" being a typo for "mathematics".
+Raw keyword searches produce noise. The brand filter handles this with two modes:
+- **Strict Mode:** Only matches exact brand domain anchors (e.g. `yourbrand.com`).
+- **Balanced Mode (Default):** Matches your brand keyword **only if** context words exist (e.g. *app, game, play store, ios, android*). This eliminates false positives where your keyword coincidentally appears in unrelated content.
 
 ---
 
@@ -144,4 +144,4 @@ Raw scores are normalized to a `-1.0` to `1.0` scale for consistent graphing on 
 | **Play Store** | 100 / min | Fixed (1 sec) | 1 |
 | **App Store** | 60 / min | Fixed (1 sec) | 1 |
 
-This configuration ensures the Matiks Monitor operates "Low and Slow", gathering data continuously without triggering platform defenses.
+This configuration ensures the system operates "Low and Slow", gathering data continuously without triggering platform rate-limit defenses.

@@ -1,59 +1,41 @@
 # Social Media Brand Monitor
 
-> **Autonomous brand intelligence & community outreach platform**
+> **Autonomous brand intelligence, response management & community outreach platform**
 
 ![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial-blue.svg)
 ![Node: 20+](https://img.shields.io/badge/Node-20%2B-green.svg)
 ![TypeScript](https://img.shields.io/badge/Language-TypeScript-blue.svg)
 ![SQLite](https://img.shields.io/badge/Database-SQLite%20WAL-orange.svg)
 
-A production-ready system that autonomously monitors brand mentions across Reddit, Google Play, and the Apple App Store, analyzes sentiment, fires configurable alerts, and lets you publish community outreach posts—all from a single local dashboard.
+A production-ready system that autonomously monitors brand mentions across Reddit, Google Play, and the Apple App Store, analyzes sentiment, fires configurable alerts with webhook notifications, manages your response inbox, tracks competitors, and produces weekly digest reports — all from a single local dashboard.
 
 ---
 
-## ✨ What's New in v2
+## ✨ Feature Highlights
 
+### Core Intelligence
 | Feature | Description |
 |---------|-------------|
-| 🎯 **Reddit Outreach** | Connect your Reddit account via OAuth and publish drafted posts to target subreddits—straight from the dashboard |
-| 📊 **Sentiment Health Bar** | At-a-glance positive/negative/neutral breakdown bar on the dashboard |
-| 🔍 **Global Search** | Header search bar + `/api/search?q=` endpoint to find content across mentions *and* reviews simultaneously |
-| 📦 **Combined Export** | `/api/export/all` downloads one unified CSV of all mentions + reviews |
-| 💓 **Health Endpoint** | `/api/health` liveness probe for uptime monitors / CI pipelines |
-| 📈 **Sentiment Summary API** | `/api/sentiment/summary?days=30` returns percentages + day-by-day trend |
-| 🏷️ **Projects & Keyword Groups** | Scope monitoring to named projects with keyword groups, competitor entities, and per-project alert rules |
+| 🌐 **Multi-Platform Monitoring** | Reddit keyword search + subreddit crawling, Google Play reviews, Apple App Store reviews |
+| 🧠 **AFINN-165 Sentiment** | Every mention and review automatically classified as Positive / Neutral / Negative |
+| 🔔 **Configurable Alerts** | Mention-spike and negative-sentiment-spike rules per project, with enable/disable toggle |
+| 🏷️ **Projects & Keyword Groups** | Scope monitoring to named projects with keyword groups, competitor entities, and per-project rules |
 
----
+### Workflow & Response Management
+| Feature | Description |
+|---------|-------------|
+| 📭 **Response Inbox** | Bookmark mentions (⭐) and flag them for action (🔔); triage with Open → In Progress → Resolved workflow and internal notes |
+| 📡 **Webhook Notifications** | When an alert fires, POST to a Slack, Discord, or any HTTP endpoint automatically |
+| 📤 **Reddit Outreach** | Connect via OAuth 2.0 and publish drafted posts to target subreddits with a full audit trail |
 
-## 🚀 Key Features
-
-### 🌐 Multi-Platform Monitoring
-- **Reddit** — keyword search + dedicated subreddit crawling via `old.reddit.com`
-- **Google Play Store** — review aggregation with rating, version, and sentiment
-- **Apple App Store** — global reviews via regional RSS feeds
-
-### 🧠 Intelligence
-- **AFINN-165 sentiment** — every mention/review classified as Positive / Neutral / Negative
-- **Smart rate limiting** — token-bucket algorithm with per-platform tuning
-- **Cursor-based incremental scraping** — never re-fetches old data
-- **Human behaviour simulation** — random delays, scroll patterns, cursor curves
-
-### 🔔 Configurable Alerts
-- **Mention spike** — fire when volume exceeds a threshold in a time window
-- **Negative sentiment spike** — fire when negative% crosses a configurable level
-- Per-project rules with enable/disable toggle
-
-### 📤 Reddit Outreach
-- Connect any Reddit account via standard OAuth 2.0
-- Manage target subreddits with per-subreddit cooldowns and notes
-- Create text or link drafts with optional disclosure text
-- One-click post submission with full audit trail (success/failure log per attempt)
-
-### 📊 Dashboard & API
-- **EJS server-side templates** with a custom CSS design system
-- Real-time sentiment health bar on the overview
-- Trend chart data, platform comparison, recent alerts feed
-- Full REST API for headless integrations
+### Analytics & Reporting
+| Feature | Description |
+|---------|-------------|
+| 🔭 **Competitor Comparison** | Side-by-side mention volume, 7d/30d trends, and sentiment split for every tracked entity |
+| 📊 **Weekly Digest Report** | Stakeholder-ready weekly summary: KPIs, daily bar chart, platform breakdown, top mentions, low-rated reviews |
+| 📈 **Sentiment Summary API** | Rolling-window percentages + day-by-day trend data |
+| 🔍 **Global Search** | Search across mentions *and* reviews simultaneously from the header bar or via API |
+| 📦 **Flexible Exports** | CSV, JSON, combined export, and Google Sheets sync |
 
 ---
 
@@ -142,7 +124,7 @@ APPSTORE_CRON="0 */3 * * *"    # Every 3 hours
 
 ### Browser Controls
 ```ini
-HEADLESS=true    # false to watch browser for debugging
+HEADLESS=true    # false to watch the browser for debugging
 SLOWMO=0         # ms between Playwright actions (increase for slower connections)
 ```
 
@@ -150,13 +132,13 @@ SLOWMO=0         # ms between Playwright actions (increase for slower connection
 
 ## 🖥️ Usage
 
-### Start the system
+### Start the System
 ```bash
-npm start        # web server + scheduler (daemon mode)
-npm run dev      # ts-node watch mode (development)
+npm start        # web server + scheduler (production)
+npm run dev      # tsx watch mode (development, auto-reloads on file changes)
 ```
 
-### Manual scrapes
+### Manual Scrapes
 ```bash
 npm run scrape:reddit
 npm run scrape:playstore
@@ -164,14 +146,17 @@ npm run scrape:appstore
 npm run scrape:all
 ```
 
-### Dashboard pages
+### Dashboard Pages
 | URL | Description |
 |-----|-------------|
-| `/` | Overview with sentiment health bar, metrics, and activity feed |
-| `/mentions` | Filterable Reddit mention feed with CSV/JSON export |
+| `/` | Overview — sentiment health bar, metrics cards, and activity feed |
+| `/mentions` | Filterable Reddit mention feed with CSV/JSON export and inline bookmark/flag buttons |
 | `/reviews` | App store reviews with rating and sentiment filters |
-| `/projects` | Project management, keyword groups, entities, alert rules |
-| `/outreach` | Reddit OAuth connection, target subreddits, post drafts |
+| `/inbox` | Response inbox — all bookmarked and action-required mentions with status workflow and notes |
+| `/compare` | Competitor comparison — side-by-side mention volume, trends, and sentiment for all tracked entities |
+| `/report` | Weekly digest report — KPIs, daily chart, platform breakdown, top mentions, and low-rated reviews |
+| `/projects` | Project management, keyword groups, entities, alert rules, and webhook URLs |
+| `/outreach` | Reddit OAuth connection, target subreddits, and post drafts |
 | `/logs` | Scraper job history |
 
 ---
@@ -183,20 +168,32 @@ npm run scrape:all
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/stats` | Aggregate counts (mentions, reviews, last-24h) |
-| `GET` | `/api/mentions` | Paginated mentions (`platform`, `sentiment`, `search`, `startDate`, `endDate`, `limit`, `offset`) |
-| `GET` | `/api/reviews` | Paginated reviews (`platform`, `rating`, `sentiment`, `search`, `startDate`, `endDate`, `limit`, `offset`) |
+| `GET` | `/api/mentions` | Paginated mentions — filters: `platform`, `sentiment`, `search`, `startDate`, `endDate`, `limit`, `offset` |
+| `GET` | `/api/reviews` | Paginated reviews — filters: `platform`, `rating`, `sentiment`, `search`, `startDate`, `endDate`, `limit`, `offset` |
 | `GET` | `/api/trends` | Daily mention trend (`?days=30`) |
 | `GET` | `/api/projects` | All projects |
-| `GET` | `/api/alerts` | Alert rules and recent events (triggers evaluation) |
+| `GET` | `/api/alerts` | Alert rules and recent events |
 | `GET` | `/api/status` | Scheduler info, rate-limit state, recent logs |
 
-### New in v2
+### Intelligence & Analytics
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/health` | Liveness probe — returns `{"status":"ok", ...}` |
 | `GET` | `/api/search?q=<term>` | Cross-table search (mentions + reviews simultaneously) |
-| `GET` | `/api/sentiment/summary` | Positive/negative/neutral percentages + trend (`?days=30`) |
+| `GET` | `/api/sentiment/summary` | Positive/negative/neutral percentages + daily trend (`?days=30`) |
+| `GET` | `/api/compare` | Entity comparison — mention volume, 7d/30d delta, and sentiment per tracked entity (`?projectId=&days=30`) |
+| `GET` | `/api/report/weekly` | Weekly digest JSON — KPIs, daily chart, platform split, top mentions, low-rated reviews (`?weeksAgo=0`) |
+
+### Response Inbox
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/inbox` | All bookmarked or action-required mentions with status |
+| `POST` | `/mentions/:id/bookmark` | Toggle bookmark flag on a mention |
+| `POST` | `/mentions/:id/action` | Toggle action-required flag on a mention |
+| `POST` | `/mentions/:id/status` | Update triage status (`open` / `in_progress` / `resolved`) |
+| `POST` | `/mentions/:id/notes` | Save internal notes on a mention |
 
 ### Exports
 
@@ -206,7 +203,7 @@ npm run scrape:all
 | `GET` | `/api/export/mentions.json` | Mentions as JSON attachment |
 | `GET` | `/api/export/reviews` | Reviews as CSV |
 | `GET` | `/api/export/reviews.json` | Reviews as JSON attachment |
-| `GET` | `/api/export/all` | **Combined** mentions + reviews as a single CSV |
+| `GET` | `/api/export/all` | Combined mentions + reviews as a single CSV |
 | `GET` | `/api/export/sheets?type=mentions\|reviews` | Push to Google Sheets (requires configuration) |
 
 ### Outreach
@@ -229,20 +226,15 @@ npm run scrape:all
 
 ## 🔍 Troubleshooting
 
-### Playwright launch fails
-Run `npx playwright install chromium` — the binary may not be downloaded yet.
-
-### "Rate Limit Exceeded"
-Increase cron interval in `.env` or add proxy credentials. The system auto-backs-off but a longer interval prevents repeated bursts.
-
-### "Database Locked"
-Close any SQLite GUI tool that has `data/monitor.db` open, then restart the app. WAL mode handles most concurrency but exclusive GUI locks cause this.
-
-### Dashboard not loading
-Run `npm run build` to regenerate `dist/`. In development use `npm run dev`.
-
-### Reddit Outreach — "Invalid OAuth state"
-States expire after 10 minutes. Start the flow again from `/outreach`.
+| Problem | Solution |
+|---------|----------|
+| **Playwright launch fails** | Run `npx playwright install chromium` — the Chromium binary may not be downloaded yet |
+| **"Rate Limit Exceeded"** | Increase the cron interval in `.env` or add proxy credentials. The system auto-backs-off, but a longer interval prevents repeated bursts |
+| **"Database Locked"** | Close any SQLite GUI tool that has `data/monitor.db` open, then restart. WAL mode handles most concurrency, but exclusive GUI locks cause this error |
+| **Dashboard not loading** | Run `npm run build` to regenerate `dist/`. In development use `npm run dev` |
+| **Reddit Outreach — "Invalid OAuth state"** | OAuth states expire after 10 minutes. Start the flow again from `/outreach` |
+| **No data showing** | Check the Logs page for red "Failed" entries. Verify your `REQUIRED_TERMS` are not too strict |
+| **Webhook not firing** | Ensure the webhook URL is saved on the alert rule. Check your Slack/Discord app has incoming webhooks enabled |
 
 ---
 
@@ -278,9 +270,12 @@ src/
         ├── dashboard.ejs
         ├── mentions.ejs
         ├── reviews.ejs
+        ├── inbox.ejs       # Response inbox (bookmark, flag, triage)
+        ├── compare.ejs     # Competitor comparison
+        ├── report.ejs      # Weekly digest report
         ├── projects.ejs
         ├── project_detail.ejs
-        ├── outreach.ejs   # NEW — Reddit outreach module
+        ├── outreach.ejs    # Reddit outreach module
         └── logs.ejs
 data/
 └── monitor.db             # SQLite database (auto-created)
@@ -297,9 +292,9 @@ docs/
 
 | Document | Description |
 |----------|-------------|
-| [System Architecture](./docs/01_SYSTEM_ARCHITECTURE_AND_RELIABILITY_ENGINEERING.md) | Backend design, DB schema, fault-tolerance |
-| [Scraping Strategies](./docs/02_SCRAPING_INTELLIGENCE_AND_STRATEGY.md) | Anti-detection, rate limiting, stealth |
-| [User Operations Manual](./docs/03_USER_OPERATIONS_MANUAL.md) | Dashboard guide + full API reference |
+| [System Architecture](./docs/01_SYSTEM_ARCHITECTURE_AND_RELIABILITY_ENGINEERING.md) | Backend design, DB schema, and fault-tolerance patterns |
+| [Scraping Strategies](./docs/02_SCRAPING_INTELLIGENCE_AND_STRATEGY.md) | Anti-detection, rate limiting, and cursor logic |
+| [User Operations Manual](./docs/03_USER_OPERATIONS_MANUAL.md) | Full dashboard guide and API reference |
 | [Tech Stack Guide](./docs/TECH_STACK_INTERVIEW_GUIDE.md) | Engineering decisions and trade-offs |
 
 ---

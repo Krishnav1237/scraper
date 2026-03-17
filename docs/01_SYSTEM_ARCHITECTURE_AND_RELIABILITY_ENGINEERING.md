@@ -1,4 +1,4 @@
-# Matiks Monitor: System Architecture & Reliability Engineering
+# Social Media Brand Monitor: System Architecture & Reliability Engineering
 > **Document ID:** SYS-ARCH-MASTER-V1
 > **Scope:** Architecture, SRE, Automation, and Future Scaling
 > **Status:** Production Release
@@ -7,7 +7,7 @@
 
 # 1. Executive Summary
 
-This document serves as the definitive backend engineering reference for the Matiks Social Media Monitor. It consolidates the technical architecture, automation logic, reliability engineering (SRE) principles, and the future modernization roadmap into a single holistic blueprint.
+This document serves as the definitive backend engineering reference for the Social Media Brand Monitor. It consolidates the technical architecture, automation logic, reliability engineering (SRE) principles, and the future modernization roadmap into a single holistic blueprint.
 
 The system is designed as a **Fault-Tolerant Modular Monolith**, capable of autonomous operation for months without human intervention, utilizing rigorous state management to handle the unreliable nature of web scraping.
 
@@ -50,10 +50,21 @@ graph TD
         State -->|Next Start Time| Manager
     end
     
-    subgraph "Outreach Module (v2)"
+    subgraph "Alert & Notification Layer"
+        DB -->|Threshold check| AlertEngine[Alert Engine]
+        AlertEngine -->|webhook_url set| Webhook[HTTP POST to Slack/Discord/HTTP]
+    end
+
+    subgraph "Response & Analytics Layer"
+        Inbox[Response Inbox /inbox] -->|Read/Write flags| DB
+        Compare[Competitor Compare /compare] -->|Read| DB
+        Report[Weekly Digest /report] -->|Read| DB
+    end
+
+    subgraph "Outreach Module"
         Outreach[Outreach Dashboard] -->|OAuth flow| RedditAPI[Reddit OAuth API]
         Outreach -->|Drafts / Subreddits| DB
-        Outreach -->|Submit post| RedditOAuth[reddit oauth.reddit.com/api/submit]
+        Outreach -->|Submit post| RedditOAuth[oauth.reddit.com/api/submit]
         RedditOAuth -->|Audit log| DB
     end
     
@@ -61,6 +72,9 @@ graph TD
     Dashboard -->|Triggers| Export[Export Service]
     Export -->|Writes| Sheets[Google Sheets API]
     User -->|Views| Outreach
+    User -->|Views| Inbox
+    User -->|Views| Compare
+    User -->|Views| Report
 ```
 
 ## 2.3 Directory Structure Analysis
@@ -84,15 +98,16 @@ This file is the single source of truth for the application's state.
     - Includes **Signal Handlers** (SIGINT/SIGTERM) to kill zombie browser processes.
     - Applies `puppeteer-extra-plugin-stealth` to evade bot detection.
 - **`rateLimit.ts`**: Implements a generic `Retry` mechanism (`withRetry<T>`) with exponential backoff.
-- **`brandFilter.ts`**: The noise reduction engine. Uses "Balanced Mode" logic to distinguish "Matiks" (brand) from "mathematics" (generic).
+- **`brandFilter.ts`**: The noise reduction engine. Uses "Balanced Mode" logic to distinguish your brand keyword from unrelated uses of the same word.
 
 ### `src/db/` (Persistence Layer)
 - **`schema.ts`**: Database definitions.
     - **WAL Mode:** Enables Write-Ahead Logging for high concurrency (Dashboards read while Scrapers write).
     - **Core tables:** `mentions`, `reviews`, `scrape_logs`, `scrape_cursors`.
-    - **Project tables:** `projects`, `keyword_groups`, `monitored_entities`, `alert_rules`, `alert_events`.
-    - **Outreach tables (v2):** `outreach_reddit_auth`, `outreach_oauth_states`, `outreach_subreddits`, `outreach_drafts`, `outreach_post_attempts`.
-    - **`queries.ts`**: Data Access Object (DAO) layer using prepared statements for security and speed. All outreach CRUD functions, OAuth state management, and post-attempt audit logging are implemented here.
+    - **Project tables:** `projects`, `keyword_groups`, `monitored_entities`, `alert_rules` (with `webhook_url`), `alert_events`.
+    - **Outreach tables:** `outreach_reddit_auth`, `outreach_oauth_states`, `outreach_subreddits`, `outreach_drafts`, `outreach_post_attempts`.
+    - **Inbox columns on `mentions`:** `bookmarked`, `action_required`, `action_status`, `internal_notes`.
+    - **`queries.ts`**: Data Access Object (DAO) layer using prepared statements for security and speed. Includes full CRUD for outreach, OAuth state management, post-attempt audit logging, inbox triage functions, entity comparison, and weekly digest aggregation.
 
 ### `src/core/googleSheets.ts` (Export Layer)
 - **Responsibility:** Handles authentication (JWT) and synchronization with Google Sheets API v4.
@@ -159,7 +174,7 @@ PM2 is the production standard for Node.js process management.
 ```bash
 npm install -g pm2
 npm run build
-pm2 start dist/index.js --name matiks-monitor
+pm2 start dist/index.js --name social-monitor
 pm2 save && pm2 startup
 ```
 **Benefits:**
@@ -179,7 +194,7 @@ CMD ["node", "dist/index.js"]
 ```
 
 ## 4.3 Database Maintenance
-The SQLite database (`data/matiks.db`) is a single file.
+The SQLite database (`data/monitor.db`) is a single file.
 - **Backup:** Copy the file (safe even while running due to WAL mode).
 - **Restore:** Simply overwrite the file and restart the process.
 
@@ -193,10 +208,15 @@ See *Platform Constraints Analysis*.
 - **Legal Barrier:** Violation of Terms of Service without Enterprise API (starting at $42k/mo).
 - **Decision:** Removed from core codebase to ensure 100% stability. Future integration requires Enterprise API keys or 3rd party vendors (BrightData).
 
-## 5.2 Completed in v2
+## 5.2 Completed Features
+
 - ✅ **Reddit Outreach Module** — OAuth 2.0 flow, subreddit management, draft posts, post submission with audit trail
 - ✅ **Projects & Alert Rules** — per-project keyword groups, competitor entities, and configurable alert thresholds
-- ✅ **Enhanced API** — `/api/health`, `/api/search`, `/api/sentiment/summary`, `/api/export/all`
+- ✅ **Webhook Notifications** — alert rules fire an HTTP POST to configured Slack, Discord, or custom HTTP endpoints
+- ✅ **Response Inbox** — bookmark and flag mentions for triage; Open → In Progress → Resolved workflow with internal notes
+- ✅ **Competitor Comparison** — side-by-side entity stats: mention volume, 7d/30d trends, sentiment split
+- ✅ **Weekly Digest Report** — stakeholder-ready weekly summary with KPIs, daily chart, platform breakdown, and top content
+- ✅ **Enhanced API** — `/api/health`, `/api/search`, `/api/sentiment/summary`, `/api/export/all`, `/api/compare`, `/api/report/weekly`
 - ✅ **Dashboard Sentiment Health Bar** — at-a-glance positive/negative/neutral indicator
 
 ## 5.3 Generative AI Integration (Phase 3)

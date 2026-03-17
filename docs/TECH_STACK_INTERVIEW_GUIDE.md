@@ -1,12 +1,12 @@
-# Matiks Social Media Monitor — Interview Tech Guide
+# Social Media Brand Monitor — Tech Stack & Engineering Guide
 
-> A comprehensive breakdown of tech stack, system design, architecture decisions, and engineering rationale for the **Matiks Social Media Monitoring Tool**.
+> A comprehensive breakdown of tech stack, system design, architecture decisions, and engineering rationale for the **Social Media Brand Monitor**.
 
 ---
 
 ## 1. Project Overview
 
-**Matiks Monitor** is a production-grade, self-hosted brand intelligence platform. It autonomously scrapes brand mentions from **Reddit**, aggregates app reviews from the **Google Play Store** and **Apple App Store**, runs **local sentiment analysis**, and surfaces everything through a real-time **web dashboard**.
+The **Social Media Brand Monitor** is a production-grade, self-hosted brand intelligence platform. It autonomously scrapes brand mentions from **Reddit**, aggregates app reviews from the **Google Play Store** and **Apple App Store**, runs **local sentiment analysis**, and surfaces everything through a real-time **web dashboard** — with a full response inbox, competitor comparison, weekly digest reports, and community outreach tools built in.
 
 **Key constraints that drove design:**
 - No official platform APIs (Reddit public JSON, RSS feeds)
@@ -62,7 +62,7 @@ flowchart TD
     end
 
     subgraph Persistence
-        J[(SQLite WAL\nmatiks.db)]
+        J[(SQLite WAL\nmonitor.db)]
     end
 
     subgraph Scheduler
@@ -92,7 +92,7 @@ flowchart TD
 ### Project Directory Structure
 
 ```
-matiks-monitor/
+social-media-monitor/
 ├── src/
 │   ├── config.ts               # Central config + zod env validation
 │   ├── index.ts                # Entry point: starts server + scheduler
@@ -108,20 +108,26 @@ matiks-monitor/
 │   │   ├── playstore.ts        # Play Store review scraper
 │   │   ├── appstore.ts         # App Store RSS scraper
 │   │   └── run.ts              # CLI entry for manual scrape runs
-│   ├── pipeline/
-│   │   ├── sentiment.ts        # AFINN analysis + normalization
-│   │   └── lexicon.ts          # Custom social media vocabulary overrides
 │   ├── db/
 │   │   ├── schema.ts           # SQLite schema + WAL init
 │   │   ├── queries.ts          # All DB queries (read/write)
 │   │   └── init.ts             # DB bootstrap script
 │   └── web/
 │       ├── server.ts           # Express app, routes, API endpoints
-│       ├── views/              # EJS templates (dashboard, mentions, reviews, logs)
+│       ├── views/              # EJS templates
+│       │   ├── dashboard.ejs
+│       │   ├── mentions.ejs
+│       │   ├── reviews.ejs
+│       │   ├── inbox.ejs       # Response inbox (bookmark, flag, triage)
+│       │   ├── compare.ejs     # Competitor comparison
+│       │   ├── report.ejs      # Weekly digest report
+│       │   ├── projects.ejs
+│       │   ├── project_detail.ejs
+│       │   ├── outreach.ejs
+│       │   └── logs.ejs
 │       └── public/             # CSS, client-side JS, assets
-├── data/matiks.db              # SQLite database file
+├── data/monitor.db             # SQLite database file
 ├── logs/app.log                # Winston log file
-├── cookies/                    # Per-platform Playwright cookie store
 └── .env                        # Runtime configuration
 ```
 
@@ -150,21 +156,16 @@ The Reddit scraper is the most sophisticated module. It uses a **multi-phase, ex
 
 | Phase | Method | What it does |
 |---|---|---|
-| **Phase 0** | `reddit.com/r/{sub}` listings | Fetches ALL posts + comments in brand-owned subreddits (e.g., `r/matiks`) |
+| **Phase 0** | `reddit.com/r/{sub}` listings | Fetches ALL posts + comments in brand-owned subreddits |
 | **Phase 1** | `reddit.com/search.json` | Exhaustive keyword combinations × sort modes × time filters × pagination |
-| **Phase 2** | Per-subreddit restricted search | Searches 30+ targeted subreddits (math, androidapps, edu, India) |
+| **Phase 2** | Per-subreddit restricted search | Searches targeted subreddits relevant to your brand/industry |
 | **Phase 3** | Comment-specific search (`type=comment`) | Catches brand mentions buried in comment threads |
 | **Phase 4** | Pushshift/PullPush archive API | Retrieves historical data (skipped in incremental runs) |
 | **Phase 5** | Playwright browser verification | Visual scroll + DOM extraction as a final cross-check |
 
-**Incremental vs. Full mode:** The scraper checks `scrape_cursors` table. If a cursor exists, it runs phases 0-3 only with narrow time filters (`day`/`week`), completing in ~5 minutes instead of 10.
+**Incremental vs. Full mode:** The scraper checks `scrape_cursors`. If a cursor exists, it runs phases 0-3 with narrow time filters (`day`/`week`), completing in ~5 minutes instead of ~10.
 
-**Search term expansion:**
-```
-"matiks" → "matiks app", "matiks.in", "matiks game", "matiks mental math", 
-"matiks duel", "matiks streak", "matiks android", "matik app", "matics app" ...
-(30+ combinations)
-```
+**Search term expansion:** Your `SEARCH_TERMS` are automatically expanded into multiple variations (`"brand"`, `"brand app"`, `"brand.io"`, `"brand android"`, etc.) to maximize coverage.
 
 ---
 
@@ -229,21 +230,15 @@ Playwright launches Chromium with every known bot-detection bypass:
 
 A multi-strategy relevance system protects data quality:
 
-**Strategy 1 — Strict Mode (BRAND_STRICT=true):**
-Only saves content containing at least one brand anchor (e.g., `matiks.in`, `matiks.com`, `matiks app`).
+**Strategy 1 — Strict Mode (`FILTER_STRICT=true`):**
+Only saves content containing at least one brand anchor (e.g., `yourbrand.com`, `yourbrand.io`).
 
-**Strategy 2 — Balanced Mode (BRAND_BALANCED=true):**
-Keeps mentions with "matiks" if they also contain app context keywords (`app`, `game`, `math`, `android`, `ios`, `download`, `puzzle`, `duel`...).
+**Strategy 2 — Balanced Mode (`FILTER_BALANCED=true`):**
+Keeps mentions with your brand keyword if they also contain app context words (`app`, `game`, `android`, `ios`, `download`, `puzzle`, etc.).
 
-**Exclusion patterns (regex):**
-- Filipino language terms (high noise — "matik" slang in Tagalog)
-- Basketball slang (`matik dribble`, `matik shot`)
-- Tattoo artists (`Matt Matik`)
-- Counter-Strike terms
-- Anime/Japanese names
-- Filipino university names
+**Exclusion patterns:** Add custom regex exclusions in `brandFilter.ts` to eliminate noise from unrelated uses of your keyword (other brands, slang, foreign languages, etc.).
 
-This is critical for the Matiks brand because "matik" is a common Tagalog word, causing massive false-positive noise without these filters.
+This is critical for any short or common keyword where your brand name coincidentally appears in unrelated contexts.
 
 ---
 
@@ -300,6 +295,14 @@ id, platform, status, items_found, items_new, error, started_at, completed_at
 - `outreach_drafts` — draft posts for human review before submission
 - `outreach_post_attempts` — audit log of post attempts
 
+**Inbox columns on `mentions`** (response triage):
+- `bookmarked` — boolean flag for saved mentions
+- `action_required` — boolean flag for items needing a response
+- `action_status` — `open` / `in_progress` / `resolved`
+- `internal_notes` — private team notes
+
+**Alert rules** include a `webhook_url` column — when an alert fires, the system POSTs a payload to this URL (auto-formats for Slack, Discord, or generic HTTP).
+
 #### Indexes
 ```sql
 idx_mentions_platform, idx_mentions_created, idx_mentions_sentiment
@@ -337,11 +340,16 @@ if (runningJobs.has(job.name)) {
 A standard Express.js app with server-side rendering via EJS templates.
 
 #### Pages (SSR)
-| Route | Template | Data |
+| Route | Template | Description |
 |---|---|---|
-| `GET /` | `dashboard.ejs` | Stats, recent mentions, recent reviews, logs |
-| `GET /mentions` | `mentions.ejs` | Filtered `mentions` table (search, date, platform, sentiment) |
-| `GET /reviews` | `reviews.ejs` | Filtered `reviews` table |
+| `GET /` | `dashboard.ejs` | Stats, sentiment health bar, recent mentions, recent reviews, logs |
+| `GET /mentions` | `mentions.ejs` | Filtered mentions feed with inline bookmark / flag buttons |
+| `GET /reviews` | `reviews.ejs` | Filtered reviews table |
+| `GET /inbox` | `inbox.ejs` | Response inbox — bookmarked/flagged mentions with triage status and notes |
+| `GET /compare` | `compare.ejs` | Side-by-side entity comparison (volume, trends, sentiment) |
+| `GET /report` | `report.ejs` | Weekly digest report with KPIs, daily chart, and top content |
+| `GET /projects` | `projects.ejs` | Project management, keyword groups, entities, alert rules |
+| `GET /outreach` | `outreach.ejs` | Reddit OAuth, target subreddits, draft posts |
 | `GET /logs` | `logs.ejs` | Last 100 `scrape_logs` |
 
 #### REST API
@@ -350,11 +358,22 @@ A standard Express.js app with server-side rendering via EJS templates.
 | `/api/stats` | GET | Aggregate counts, averages |
 | `/api/mentions` | GET | Paginated JSON list with filters |
 | `/api/reviews` | GET | Paginated JSON list with filters |
-| `/api/status` | GET | Uptime, cron schedules, rate limit states, recent logs |
-| `/api/export/mentions` | GET | Download as CSV |
-| `/api/export/reviews` | GET | Download as CSV |
-| `/api/export/sheets?type=mentions` | GET | Push to Google Sheets |
-| `/api/export/sheets?type=reviews` | GET | Push to Google Sheets |
+| `/api/trends` | GET | Day-by-day mention trend |
+| `/api/health` | GET | Liveness probe |
+| `/api/search` | GET | Cross-table search (mentions + reviews) |
+| `/api/sentiment/summary` | GET | Sentiment percentages + daily trend |
+| `/api/compare` | GET | Side-by-side entity stats |
+| `/api/report/weekly` | GET | Weekly digest JSON |
+| `/api/inbox` | GET | Bookmarked / action-required mentions |
+| `/api/status` | GET | Uptime, cron schedules, rate-limit state, recent logs |
+| `/api/export/mentions` | GET | Download mentions as CSV |
+| `/api/export/reviews` | GET | Download reviews as CSV |
+| `/api/export/all` | GET | Download combined CSV |
+| `/api/export/sheets?type=...` | GET | Push to Google Sheets |
+| `/mentions/:id/bookmark` | POST | Toggle bookmark flag |
+| `/mentions/:id/action` | POST | Toggle action-required flag |
+| `/mentions/:id/status` | POST | Update triage status |
+| `/mentions/:id/notes` | POST | Save internal notes |
 
 **URL-based filtering:** All filters use query params (`?platform=reddit&sentiment=negative&search=bug`). This makes filtered views shareable by copying the URL.
 
@@ -408,7 +427,7 @@ Raw API Results
            ▼
 ┌─────────────────────┐
 │  Layer 2: Brand     │  Strict anchor | Balanced keyword | Subreddit allowlist
-│  Filter             │  Removes false positives (Tagalog, tattoos, CS:GO...)
+│  Filter             │  Removes false positives (noise, unrelated content)
 └──────────┬──────────┘
            │
            ▼
@@ -450,7 +469,7 @@ Raw API Results
 > "Bot detection works by correlating signals — perfect request timing, missing browser APIs, known automation flags. I address this by randomizing everything: viewport, user agent, hardware specs, request timing (jitter), and patching every `navigator.*` property that headless browsers expose."
 
 ### On data quality:
-> "The biggest challenge with 'matiks' is that it's also a common Tagalog slang word and appears in Counter-Strike and tattoo contexts. I built a multi-layer brand filter with 10+ exclusion regex patterns that eliminate noise, combined with a balanced mode that requires the word to co-occur with app context keywords like 'download', 'android', 'puzzle'."
+> "The biggest challenge with short or ambiguous brand keywords is noise — your keyword may appear in completely unrelated contexts. I built a multi-layer brand filter with configurable exclusion regex patterns that eliminate noise, combined with a balanced mode that requires the keyword to co-occur with app context words like 'download', 'android', or 'review'. This keeps the dataset clean without having to manually review every false positive."
 
 ### On the token bucket rate limiter:
 > "Token bucket is the right algorithm here because it allows short bursts (filling queued requests quickly) while maintaining a long-term average. Exponential backoff on 429 responses is standard practice — double the wait on each failure, slowly recover on success."
@@ -460,15 +479,23 @@ Raw API Results
 
 ---
 
-## 9. Potential Improvements (For Discussion)
+### On the data quality strategy:
+> "The three-layer funnel is the heart of what keeps the database clean. In-memory ID deduplication catches duplicates across API phases in a single run, the brand filter removes keyword noise, and the DB `UNIQUE` constraint is the last safety net. Each layer handles a different failure mode."
+
+### On the new workflow features:
+> "The response inbox, competitor comparison, and weekly digest were designed to address the gap between data collection and business action. Raw data in a table is not useful to a brand manager — they need a queue of items to respond to, a benchmark to compare against, and a summary they can share with their VP without exporting to Excel."
+
+---
+
+## 9. Potential Improvements
 
 | Area | Improvement |
 |---|---|
-| **Scalability** | Replace SQLite with PostgreSQL, move scraper to a worker thread or separate process |
-| **Queue** | Add BullMQ for job queue with retries, dead-letter, and UI visibility |
-| **Real-time UI** | Add WebSocket to push new mentions live (no page refresh needed) |
-| **LLM Sentiment** | Replace AFINN with an LLM-backed sentiment classifier for higher accuracy |
-| **Alerting** | Slack/email webhook when sentiment spikes negative or volume spikes |
-| **Containerization** | Docker Compose with Chromium in headless container for reproducible deployment |
-| **More platforms** | YouTube comments, App Store search suggestions, Google News |
-| **Auth** | Basic auth on the dashboard to protect sensitive brand data |
+| **Scalability** | Replace SQLite with PostgreSQL + TimescaleDB; move scraper to a separate worker process with BullMQ |
+| **Real-time UI** | Add WebSocket to push new mentions live without a page refresh |
+| **LLM Sentiment** | Replace AFINN lexicon with an LLM-backed classifier for sarcasm detection and aspect-based analysis |
+| **Auto-Reply Drafts** | Use LLM to generate context-aware reply suggestions in the Response Inbox |
+| **Containerization** | Docker Compose with Chromium in a headless container for reproducible deployment |
+| **More platforms** | YouTube comments, Google News, Trustpilot, G2, App Store search suggestions |
+| **Dashboard Auth** | Basic/OAuth auth on the dashboard to protect sensitive brand data |
+| **Email Digest** | Schedule the weekly digest to be emailed automatically via SendGrid or Resend |

@@ -1,8 +1,8 @@
 # Social Media Brand Monitor: User Operations Manual & API Reference
 > **Document ID:** USER-OPS-V2
 > **Audience:** Analysts, Product Managers, Developers
-> **Scope:** Dashboard Usage, Data Export, API Specs, Outreach
-> **Status:** Active — v2.0
+> **Scope:** Dashboard Usage, Data Export, API Specs, Outreach, Inbox, Competitor Intel, Weekly Digest
+> **Status:** Active
 
 ---
 
@@ -46,7 +46,7 @@ Next to the sentiment bar you'll see how many Reddit posts are live and how many
     - 🟡 **Running:** Job is currently active.
     - 🔴 **Failed:** Job encountered a critical error.
 
-## 2.2 The "Mentions" Console (Social Listening)
+## 2.2 The "Mentions" Console (`/mentions`)
 This is your search engine for social content.
 
 ### Advanced Filtering
@@ -55,15 +55,86 @@ This is your search engine for social content.
 - **Date Range:** Drill down into specific marketing campaign windows.
 - **Deep Linking:** Every filter updates the URL — copy it to share a specific view with your team.
 
-## 2.3 The "Reviews" Console (App Feedback)
+### Inline Triage Actions
+Each mention row has two icon buttons:
+- **⭐ Bookmark** — marks the mention for later reference.
+- **🔔 Flag for Action** — routes the mention into the Response Inbox for team follow-up.
+
+## 2.3 The "Reviews" Console (`/reviews`)
 Aggregates feedback from both mobile stores into a single stream.
 
 ### Power User Workflows
 - **Find Bugs:** Filter for `Rating < 3` AND Search for "bug".
 - **Version Check:** Filter by app version to see if a hotfix solved complaints.
 
-## 2.4 The "Outreach" Module
-Publish community posts to Reddit directly from the dashboard.
+## 2.4 The "Response Inbox" (`/inbox`)
+A dedicated triage queue for your brand response team.
+
+### What appears in the Inbox?
+Any mention that has been **bookmarked** (⭐) or **flagged for action** (🔔) from the Mentions page.
+
+### Triage Workflow
+Each inbox item has a three-stage status:
+| Status | Meaning |
+|--------|---------|
+| `Open` | Newly flagged, not yet reviewed |
+| `In Progress` | A team member is actively working on a response |
+| `Resolved` | Response sent or issue closed |
+
+Use the status dropdown on each item to advance it through the pipeline.
+
+### Internal Notes
+Add private notes to any inbox item (e.g. "Escalated to customer success", "Already replied via email"). Notes are not visible to the original poster — they are for internal team coordination only.
+
+## 2.5 The "Competitor Comparison" (`/compare`)
+See how your brand stacks up against competitors tracked in your projects.
+
+### Filters
+- **Project** — select the project whose tracked entities you want to compare.
+- **Time Window** — choose 7, 14, 30, or 90 days.
+
+### What the page shows
+| Metric | Description |
+|--------|-------------|
+| Mention Volume | Total mentions in the selected window |
+| 7d / 30d Change | Absolute delta vs the previous equivalent period |
+| Positive % | Percentage of mentions with positive sentiment |
+| Negative % | Percentage of mentions with negative sentiment |
+| Sentiment Bar | Visual colour bar showing the positive/neutral/negative split |
+
+### API access
+```
+GET /api/compare?projectId=<id>&days=30
+```
+
+## 2.6 The "Weekly Digest Report" (`/report`)
+A stakeholder-ready summary of the past week's brand performance.
+
+### KPI Cards
+| Card | Description |
+|------|-------------|
+| Mentions | Total mentions this week vs last week (with % change) |
+| Reviews | Total reviews this week with average star rating |
+| Positive Sentiment | Percentage of positive mentions this week |
+| Negative Sentiment | Percentage of negative mentions this week |
+| Alerts Fired | Number of alert rules triggered this week |
+
+### Charts & Tables
+- **Daily Mentions Bar Chart** — a simple CSS bar chart showing mention volume per day of the week.
+- **Platform Breakdown** — mention count per platform.
+- **Top Engaged Mentions** — the mentions with the most likes + comments.
+- **Low-Rated Reviews** — reviews rated 1 or 2 stars (needs attention).
+
+### Navigation
+Use the **← Previous Week** and **Next Week →** links at the top to navigate back in time. You can also append `?weeksAgo=N` to the URL to jump directly (e.g. `?weeksAgo=4` = 4 weeks ago).
+
+### Export
+```
+GET /api/report/weekly?weeksAgo=0
+```
+Returns the full digest as JSON — useful for feeding into Slack bots, email reports, or BI tools.
+
+## 2.7 The "Outreach" Module (`/outreach`)
 
 ### Setup
 1. Navigate to **Outreach** in the sidebar.
@@ -129,6 +200,7 @@ curl "http://localhost:3000/api/export/sheets?type=reviews"
 **Base URL:** `http://localhost:3000/api/`
 
 ## 4.1 Stats & Metrics
+
 ### `GET /api/stats`
 Returns the raw numbers behind the Overview page.
 ```json
@@ -138,18 +210,6 @@ Returns the raw numbers behind the Overview page.
   "last24h": { "mentions": 12, "reviews": 3 }
 }
 ```
-
-## 4.2 Data Query Endpoints
-### `GET /api/mentions`
-**Query Params:** `platform`, `sentiment` (`positive`|`negative`|`neutral`), `search`, `startDate`, `endDate`, `limit` (default 50), `offset`
-
-### `GET /api/reviews`
-**Query Params:** `platform` (`playstore`|`appstore`), `rating` (1-5), `sentiment`, `search`, `startDate`, `endDate`, `limit`, `offset`
-
-### `GET /api/trends?days=30`
-Day-by-day mention count + sentiment breakdown for the last N days (max 365).
-
-## 4.3 New in v2
 
 ### `GET /api/health`
 Liveness probe — suitable for Pingdom, UptimeRobot, or CI pipelines.
@@ -162,13 +222,29 @@ Liveness probe — suitable for Pingdom, UptimeRobot, or CI pipelines.
 }
 ```
 
+### `GET /api/status`
+Returns scheduler info, rate-limit state per platform, and the last 5 log entries.
+
+---
+
+## 4.2 Data Query Endpoints
+
+### `GET /api/mentions`
+**Query Params:** `platform`, `sentiment` (`positive`|`negative`|`neutral`), `search`, `startDate`, `endDate`, `limit` (default 50), `offset`
+
+### `GET /api/reviews`
+**Query Params:** `platform` (`playstore`|`appstore`), `rating` (1-5), `sentiment`, `search`, `startDate`, `endDate`, `limit`, `offset`
+
+### `GET /api/trends?days=30`
+Day-by-day mention count + sentiment breakdown for the last N days (max 365).
+
 ### `GET /api/search?q=<term>&limit=20`
 Cross-table search — returns matching mentions and reviews simultaneously.
 ```json
 {
   "query": "crash",
-  "mentions": { "count": 8, "items": [...] },
-  "reviews": { "count": 14, "items": [...] },
+  "mentions": { "count": 8, "items": ["..."] },
+  "reviews": { "count": 14, "items": ["..."] },
   "total": 22
 }
 ```
@@ -184,7 +260,79 @@ Sentiment percentages over a rolling window + daily trend data.
 }
 ```
 
-## 4.4 System Status
+---
+
+## 4.3 Response Inbox Endpoints
+
+### `GET /api/inbox`
+Returns all mentions that have `bookmarked = 1` or `action_required = 1`, ordered by most recently updated.
+
+### `POST /mentions/:id/bookmark`
+Toggles the bookmark flag on a mention. Returns `{ bookmarked: true|false }`.
+
+### `POST /mentions/:id/action`
+Toggles the action-required flag. Returns `{ action_required: true|false }`.
+
+### `POST /mentions/:id/status`
+Updates the triage status. Body: `{ status: "open" | "in_progress" | "resolved" }`.
+
+### `POST /mentions/:id/notes`
+Saves internal notes. Body: `{ notes: "your text here" }`.
+
+---
+
+## 4.4 Analytics Endpoints
+
+### `GET /api/compare?projectId=<id>&days=30`
+Returns a side-by-side comparison of all entities tracked in the project.
+```json
+[
+  {
+    "name": "Your Brand",
+    "type": "brand",
+    "mentions": 120,
+    "delta_7d": 14,
+    "delta_30d": -5,
+    "positive_pct": 68,
+    "negative_pct": 12
+  },
+  {
+    "name": "Competitor A",
+    "type": "competitor",
+    "mentions": 87,
+    "delta_7d": -3,
+    "delta_30d": 10,
+    "positive_pct": 55,
+    "negative_pct": 20
+  }
+]
+```
+
+**Query Params:**
+- `projectId` — filter to a specific project's entities (optional; returns all entities if omitted)
+- `days` — comparison window in days (default: `30`)
+
+### `GET /api/report/weekly?weeksAgo=0`
+Returns the full weekly digest as JSON. `weeksAgo=0` = current week, `weeksAgo=1` = last week, etc.
+```json
+{
+  "weekLabel": "Mar 10 – Mar 16, 2025",
+  "kpis": {
+    "mentions": 84, "mentions_prev": 71, "mentions_change_pct": 18,
+    "reviews": 12, "avg_rating": 3.9,
+    "positive_pct": 62, "negative_pct": 18,
+    "alerts_fired": 2
+  },
+  "dailyChart": [{ "day": "Mon", "count": 14 }, "..."],
+  "platformBreakdown": [{ "platform": "reddit", "count": 70 }, "..."],
+  "topMentions": ["..."],
+  "lowRatedReviews": ["..."]
+}
+```
+
+---
+
+## 4.5 System Status
 ### `GET /api/status`
 Returns scheduler info, rate-limit state per platform, and the last 5 log entries.
 
@@ -195,31 +343,36 @@ Returns scheduler info, rate-limit state per platform, and the last 5 log entrie
 ## 5.1 Environment Variables
 Located in `.env`. Key settings:
 - `SEARCH_TERMS` — comma-separated keywords to search on Reddit
-- `BRAND_REQUIRED_TERMS` — at least one must appear to store a mention
-- `BRAND_STRICT=true` — only keep exact anchor matches (no contextual matching)
-- `BRAND_BALANCED=true` — keep "brand" mentions only when near app/game/product context
+- `REQUIRED_TERMS` — at least one must appear to store a mention (also accepted as `BRAND_REQUIRED_TERMS`)
+- `FILTER_STRICT=true` — only keep exact anchor matches (no contextual matching)
+- `FILTER_BALANCED=true` — keep mentions only when near app/game/product context words
 
 ## 5.2 Scrape Frequency
 Controlled by standard Cron syntax in `.env`.
 - **Default:** `0 */4 * * *` (every 4 hours)
-- **Recommendation:** Do not go below `*/1` (hourly). Conversations move slowly and higher frequency increases ban risk.
+- **Recommendation:** Do not go below hourly. Conversations move slowly and higher frequency increases ban risk.
+
+## 5.3 Webhook Alerts
+When creating or editing an alert rule on the Projects page, enter a **Webhook URL**. When the alert fires the system sends an HTTP POST with this payload:
+
+**Slack / Discord format (auto-detected from URL):**
+- Slack: `{ "text": "🚨 Alert: <rule name> ...", "attachments": [...] }`
+- Discord: `{ "content": "🚨 Alert: <rule name> ..." }`
+- Generic HTTP: `{ "event": "alert_fired", "rule": {...}, "timestamp": "..." }`
+
+Leave the URL blank to disable webhook delivery for a rule.
 
 ---
 
 # 6. Troubleshooting Guide
 
-### "Google Sheets Export Failed"
-Check `GOOGLE_SERVICE_ACCOUNT_JSON` path and that the `client_email` is invited as an **Editor** on the Sheet.
-
-### "No Data Found"
-Check the System Logs tab for red "Failed" entries. Also verify `BRAND_STRICT` is not filtering out your terms.
-
-### "Scraper Failed (503 / 429)"
-Normal — the retry engine will recover automatically in the next cycle. If it persists >24h, try from a different IP or add a proxy.
-
-### "Reddit Outreach — Invalid OAuth state"
-OAuth states expire after 10 minutes. Start the flow again from `/outreach`.
-
-### "Reddit Outreach — Post rejected"
-Reddit's error is shown on the draft. Common causes: spam filters, cooldown violations, account karma too low, subreddit rules.
+| Problem | Solution |
+|---------|----------|
+| **"Google Sheets Export Failed"** | Check `GOOGLE_SERVICE_ACCOUNT_JSON` path and confirm the service account's `client_email` is an **Editor** on the Sheet |
+| **"No Data Found"** | Check the Logs page for red "Failed" entries. Verify `FILTER_STRICT` is not too aggressive for your keywords |
+| **"Scraper Failed (503 / 429)"** | Normal — the retry engine recovers automatically next cycle. If it persists beyond 24h, try a different IP or add a proxy |
+| **"Reddit Outreach — Invalid OAuth state"** | OAuth states expire after 10 minutes. Start the flow again from `/outreach` |
+| **"Reddit Outreach — Post rejected"** | Reddit's error appears on the draft. Common causes: spam filters, cooldown violations, low account karma, subreddit rules |
+| **Webhook not firing** | Ensure a webhook URL is saved on the alert rule and the endpoint is publicly reachable |
+| **Inbox empty** | No mentions have been bookmarked (⭐) or flagged for action (🔔) yet — use the inline buttons on the Mentions page |
 
